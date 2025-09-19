@@ -1,0 +1,52 @@
+@using BlazorChatApp.Models.Chat
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenCard Class="h-100">
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6">Sohbetler</RadzenText>
+        
+        <RadzenTextBox Placeholder="Ara..." @bind-Value="searchText" @onchange="FilterUsers" />
+        
+        <RadzenStack Gap="0.5rem" Style="max-height: 600px; overflow-y: auto;">
+            @foreach (var user in filteredUsers)
+            {
+                <UserItem ChatUser="user" OnUserClick="@((selectedUser) => HandleUserClick(selectedUser))" />
+            }
+        </RadzenStack>
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    [Parameter] public List<ChatUser> Users { get; set; } = new();
+    [Parameter] public EventCallback<ChatUser> OnUserSelected { get; set; }
+    
+    private string searchText = "";
+    private List<ChatUser> filteredUsers = new();
+    
+    protected override void OnParametersSet()
+    {
+        filteredUsers = Users.OrderByDescending(u => u.LastMessageTime).ToList();
+    }
+    
+    private void FilterUsers()
+    {
+        if (string.IsNullOrEmpty(searchText))
+        {
+            filteredUsers = Users.OrderByDescending(u => u.LastMessageTime).ToList();
+        }
+        else
+        {
+            filteredUsers = Users
+                .Where(u => u.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(u => u.LastMessageTime)
+                .ToList();
+        }
+        StateHasChanged();
+    }
+    
+    private async Task HandleUserClick(ChatUser user)
+    {
+        await OnUserSelected.InvokeAsync(user);
+    }
+}

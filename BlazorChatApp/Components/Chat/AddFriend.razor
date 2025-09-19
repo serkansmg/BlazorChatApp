@@ -1,0 +1,144 @@
+@inject SignalRService SignalRService
+@inject FriendService FriendService
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<RadzenCard>
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6">Arkadaş Ekle</RadzenText>
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+            <RadzenTextBox @bind-Value="searchEmail" Placeholder="Email adresi..." Style="flex: 1;"/>
+            <RadzenButton Text="Ara" Click="SearchUser" Variant="Variant.Filled"
+                          Disabled="@string.IsNullOrWhiteSpace(searchEmail)"/>
+        </RadzenStack>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger">@errorMessage</RadzenAlert>
+        }
+
+        @if (foundUser != null)
+        {
+            <RadzenCard Variant="Variant.Outlined">
+                <RadzenStack Gap="0.5rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                        <RadzenImage Path="@foundUser.AvatarUrl" Style="width: 40px; height: 40px; border-radius: 50%;"
+                                     AlternateText="@foundUser.DisplayName"/>
+                        <RadzenStack Orientation="Orientation.Vertical" Gap="0">
+                            <RadzenText TextStyle="TextStyle.Subtitle2">@foundUser.DisplayName</RadzenText>
+                            <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">@foundUser.Email</RadzenText>
+                        </RadzenStack>
+                    </RadzenStack>
+
+                    @if (friendshipStatus == FriendshipStatus.NotFriends)
+                    {
+                        <RadzenTextArea @bind-Value="friendRequestMessage"
+                                        Placeholder="Arkadaşlık isteği mesajı (isteğe bağlı)..." Rows="2"/>
+                        <RadzenButton Text="Arkadaşlık İsteği Gönder" Click="SendFriendRequest"
+                                      Variant="Variant.Filled"/>
+                    }
+                    else if (friendshipStatus == FriendshipStatus.Friends)
+                    {
+                        <RadzenAlert AlertStyle="AlertStyle.Success">Zaten arkadaşsınız</RadzenAlert>
+                    }
+                    else if (friendshipStatus == FriendshipStatus.RequestSent)
+                    {
+                        <RadzenAlert AlertStyle="AlertStyle.Info">Arkadaşlık isteği gönderildi</RadzenAlert>
+                    }
+                    else if (friendshipStatus == FriendshipStatus.RequestReceived)
+                    {
+                        <RadzenAlert AlertStyle="AlertStyle.Warning">Size arkadaşlık isteği göndermiş</RadzenAlert>
+                    }
+                </RadzenStack>
+            </RadzenCard>
+        }
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    private string searchEmail = "";
+    private string friendRequestMessage = "";
+    private string errorMessage = "";
+    private AppUser? foundUser;
+    private FriendshipStatus friendshipStatus;
+    private Guid currentUserId;
+
+    [Parameter] public EventCallback OnFriendRequestSent { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id;
+        }
+    }
+
+    private async Task SearchUser()
+    {
+        errorMessage = "";
+        foundUser = null;
+
+        if (string.IsNullOrWhiteSpace(searchEmail))
+        {
+            errorMessage = "Email adresi girin";
+            return;
+        }
+
+        try
+        {
+            foundUser = await FriendService.FindUserByEmailAsync(searchEmail.Trim());
+            if (foundUser == null)
+            {
+                errorMessage = "Bu email adresine sahip kullanıcı bulunamadı";
+                return;
+            }
+
+            if (foundUser.Id == currentUserId)
+            {
+                errorMessage = "Kendinizi arkadaş olarak ekleyemezsiniz";
+                foundUser = null;
+                return;
+            }
+
+            friendshipStatus = await FriendService.GetFriendshipStatusAsync(currentUserId, foundUser.Id);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Arama sırasında bir hata oluştu";
+        }
+    }
+
+
+    private async Task SendFriendRequest()
+    {
+        if (foundUser == null) return;
+
+        try
+        {
+            // Database'e kaydet
+            await FriendService.SendFriendRequestAsync(currentUserId, foundUser.Id, friendRequestMessage);
+
+            // Real-time bildirim gönder
+            var currentUser = await UserManager.FindByIdAsync(currentUserId.ToString());
+
+
+            await SignalRService.SendFriendRequestAsync(foundUser.Id.ToString(), currentUser?.DisplayName ?? "Unknown", friendRequestMessage);
+
+            friendshipStatus = FriendshipStatus.RequestSent;
+            await OnFriendRequestSent.InvokeAsync();
+
+            // Formu temizle
+            searchEmail = "";
+            friendRequestMessage = "";
+            foundUser = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Arkadaşlık isteği gönderilirken hata oluştu";
+        }
+    }
+
+}

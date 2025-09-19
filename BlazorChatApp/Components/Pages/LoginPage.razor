@@ -1,0 +1,94 @@
+@page "/login"
+@layout EmptyLayout
+
+
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager Navigation
+@inject UserManager<AppUser> UserManager
+@inject IJSRuntime JSRuntime
+<RadzenCard Class="mx-auto" Style="max-width: 400px;">
+    <RadzenStack Gap="1.5rem">
+        <RadzenText TextStyle="TextStyle.H3" Class="text-center">Giriş Yap</RadzenText>
+        
+        <EditForm Model="@Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+            <DataAnnotationsValidator />
+            
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Danger" ShowIcon="true" Variant="Variant.Flat">
+                    @errorMessage
+                </RadzenAlert>
+            }
+            
+            <RadzenStack Gap="1rem">
+                <RadzenFormField Text="Email" Variant="Variant.Outlined">
+                    <InputText @bind-Value="Input.Email" class="form-control" placeholder="name@example.com" 
+                               autocomplete="username" style="width: 100%;" />
+                    <ValidationMessage For="() => Input.Email" class="text-danger" />
+                </RadzenFormField>
+                
+                <RadzenFormField Text="Şifre" Variant="Variant.Outlined">
+                    <InputText type="password" @bind-Value="Input.Password" class="form-control" placeholder="Şifrenizi girin" 
+                               autocomplete="current-password" style="width: 100%;" />
+                    <ValidationMessage For="() => Input.Password" class="text-danger" />
+                </RadzenFormField>
+                
+                <button type="submit" class="btn btn-primary w-100">Giriş Yap</button>
+            </RadzenStack>
+        </EditForm>
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    private string? errorMessage;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+
+
+    public async Task LoginUser()
+    {
+        try
+        {
+            var user = await UserManager.FindByEmailAsync(Input.Email);
+            if (user == null)
+            {
+                errorMessage = "Geçersiz email veya şifre.";
+                return;
+            }
+    
+            var result = await SignInManager.PasswordSignInAsync(user.UserName!, Input.Password, false, lockoutOnFailure: false);
+            if (result.Succeeded)
+            {
+                // NavigationException'ı önlemek için sayfa yeniden yükleyin
+                Navigation.NavigateTo("/", forceLoad: true);
+                return; // Bu satırdan sonra kod çalışmayacak
+            }
+            else
+            {
+                errorMessage = "Geçersiz email veya şifre.";
+            }
+        }
+        catch (NavigationException)
+        {
+            // NavigationException'ı yakalayın ve yoksayın - login başarılı
+            return;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Giriş yapılırken bir hata oluştu.";
+        }
+    }
+    
+private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,35 @@
+@using BlazorChatApp.Models.Chat
+
+@rendermode InteractiveServer
+<RadzenCard Class="user-item mb-2 p-2" Style="cursor: pointer;" @onclick="@(() => OnUserClick.InvokeAsync(ChatUser))">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+        <RadzenImage Path="@ChatUser.AvatarUrl" Style="width: 40px; height: 40px; border-radius: 50%;" 
+                     AlternateText="@ChatUser.Name" />
+        
+        
+        <RadzenStack Orientation="Orientation.Vertical" Gap="0.25rem" Style="flex: 1;">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween">
+                <RadzenText TextStyle="TextStyle.Subtitle2" Class="mb-0">@ChatUser.Name</RadzenText>
+                
+                @if (ChatUser.UnreadMessageCount > 0)
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="@ChatUser.UnreadMessageCount.ToString()" />
+                }
+            </RadzenStack>
+            
+            <RadzenText TextStyle="TextStyle.Caption" Class="mb-0 text-muted">
+                @ChatUser.LastMessage
+            </RadzenText>
+        </RadzenStack>
+        
+        @if (ChatUser.UserType == UserType.Group)
+        {
+            <RadzenIcon Icon="group" Style="font-size: 16px; color: #666;" />
+        }
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    [Parameter] public ChatUser ChatUser { get; set; } = null!;
+    [Parameter] public EventCallback<ChatUser> OnUserClick { get; set; }
+}

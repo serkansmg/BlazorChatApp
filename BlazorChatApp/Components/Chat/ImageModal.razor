@@ -1,0 +1,10 @@
+@using Radzen
+@using Radzen.Blazor
+
+<div style="text-align: center; max-width: 90vw; max-height: 90vh;">
+    <RadzenImage Path="@ImageUrl" Style="max-width: 100%; max-height: 80vh; border-radius: 8px;" />
+</div>
+
+@code {
+    [Parameter] public string ImageUrl { get; set; } = "";
+}

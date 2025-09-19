@@ -1,0 +1,116 @@
+@using BlazorChatApp.Models.Chat
+@using BlazorChatApp.Models.Identity
+@using BlazorChatApp.Services
+@using Radzen
+@using Radzen.Blazor
+
+@inject FriendService FriendService
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject SignalRService SignalRService
+
+<RadzenCard>
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6">Arkadaşlık İstekleri (@pendingRequests.Count)</RadzenText>
+        
+        @if (pendingRequests.Any())
+        {
+            @foreach (var request in pendingRequests)
+            {
+                <RadzenCard Variant="Variant.Outlined">
+                    <RadzenStack Gap="0.75rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                            <RadzenImage Path="@request.Sender.AvatarUrl" Style="width: 40px; height: 40px; border-radius: 50%;" />
+                            <RadzenStack Orientation="Orientation.Vertical" Gap="0">
+                                <RadzenText TextStyle="TextStyle.Subtitle2">@request.Sender.DisplayName</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">@request.RequestedAt.ToString("dd.MM.yyyy HH:mm")</RadzenText>
+                            </RadzenStack>
+                        </RadzenStack>
+                        
+                        @if (!string.IsNullOrEmpty(request.Message))
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" Class="text-muted">@request.Message</RadzenText>
+                        }
+                        
+                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                            <RadzenButton Text="Kabul Et" Click="@(() => AcceptRequest(request))" 
+                                         Variant="Variant.Filled" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Small" />
+                            <RadzenButton Text="Reddet" Click="@(() => RejectRequest(request))" 
+                                         Variant="Variant.Outlined" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" />
+                        </RadzenStack>
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.Body2" Class="text-muted">Bekleyen arkadaşlık isteği yok</RadzenText>
+        }
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    private List<FriendRequest> pendingRequests = new();
+    private Guid currentUserId;
+    
+    [Parameter] public EventCallback OnRequestProcessed { get; set; }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id;
+            await LoadPendingRequests();
+        }
+    }
+    
+    private async Task LoadPendingRequests()
+    {
+        Console.WriteLine($"Loading pending requests for user: {currentUserId}");
+        pendingRequests = await FriendService.GetPendingRequestsAsync(currentUserId);
+        Console.WriteLine($"Found {pendingRequests.Count} pending requests");
+        StateHasChanged();
+    }
+    
+    private async Task AcceptRequest(FriendRequest request)
+    {
+        try
+        {
+            await FriendService.AcceptFriendRequestAsync(request.Id);
+            
+            // Real-time bildirim gönder
+            var currentUser = await UserManager.FindByIdAsync(currentUserId.ToString());
+            await SignalRService.AcceptFriendRequestAsync(request.SenderId.ToString(), currentUser?.DisplayName ?? "Unknown");
+            
+            await OnRequestProcessed.InvokeAsync();
+            await LoadPendingRequests();
+        }
+        catch (Exception ex)
+        {
+            // Hata handling
+        }
+    }
+    
+    private async Task RejectRequest(FriendRequest request)
+    {
+        try
+        {
+            await FriendService.RejectFriendRequestAsync(request.Id);
+            await LoadPendingRequests();
+        }
+        catch (Exception ex)
+        {
+            // Hata handling
+        }
+    }
+    
+    public async Task RefreshAsync()
+    {
+        Console.WriteLine("FriendRequests RefreshAsync called");
+        await LoadPendingRequests();
+        Console.WriteLine($"Loaded {pendingRequests.Count} pending requests");
+        StateHasChanged();
+    }
+}

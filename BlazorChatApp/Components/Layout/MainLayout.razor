@@ -1,0 +1,71 @@
+﻿@using System.Drawing
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using BlazorChatApp.Models.Identity
+@using Microsoft.AspNetCore.Components.Authorization
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager Navigation
+@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IServiceProvider ServiceProvider
+
+<RadzenComponents @rendermode="RenderMode.InteractiveServer" />
+
+<RadzenLayout>
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Class="px-4">
+            <RadzenText TextStyle="TextStyle.H4" Class="mb-0">BlazorChatApp</RadzenText>
+            
+            <AuthorizeView>
+                <Authorized>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenText>
+                            Hoş geldiniz, @(currentUser?.DisplayName ?? context.User.Identity!.Name)
+                        </RadzenText>
+                        <form method="post" action="/logout">
+                            <RadzenButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Size="ButtonSize.Small">
+                                Çıkış Yap
+                            </RadzenButton>
+                        </form>
+                    </RadzenStack>
+                </Authorized>
+                <NotAuthorized>
+                    <RadzenLink Path="/login">
+                        <RadzenButton Variant="Variant.Filled" Size="ButtonSize.Small">
+                            Giriş Yap
+                        </RadzenButton>
+                    </RadzenLink>
+                </NotAuthorized>
+            </AuthorizeView>
+        </RadzenStack>
+    </RadzenHeader>
+    
+    <RadzenSidebar>
+        <NavMenu />
+    </RadzenSidebar>
+    
+    <RadzenBody>
+        <RadzenContentContainer>
+            @Body
+        </RadzenContentContainer>
+    </RadzenBody>
+</RadzenLayout>
+
+@code
+{
+    private AppUser? currentUser;
+ 
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true )
+        {
+            currentUser = await SignInManager.UserManager.GetUserAsync(authState.User);
+            
+            
+        }
+    }
+    
+     
+}

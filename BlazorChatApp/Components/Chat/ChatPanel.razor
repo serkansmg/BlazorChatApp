@@ -1,0 +1,230 @@
+@using ChatMessage = BlazorChatApp.Models.Chat.ChatMessageModel
+@rendermode InteractiveServer
+@inject SignalRService SignalRService
+@inject IJSRuntime JSRuntime
+
+@if (SelectedUser != null)
+{
+    <RadzenCard Class="h-100 d-flex flex-column">
+        <!-- Chat Header -->
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Class="border-bottom pb-3 mb-3">
+            <RadzenImage Path="@SelectedUser.AvatarUrl" Style="width: 40px; height: 40px; border-radius: 50%;" />
+            <RadzenStack Orientation="Orientation.Vertical" Gap="0">
+                <RadzenText TextStyle="TextStyle.Subtitle1" Class="mb-0">@SelectedUser.Name</RadzenText>
+                @if (SelectedUser.UserType == UserType.Group)
+                {
+                    <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">Grup Sohbeti</RadzenText>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">Çevrimiçi</RadzenText>
+                }
+            </RadzenStack>
+        </RadzenStack>
+
+        <!-- Messages Area -->
+        <!-- Messages Area -->
+        <div @ref="messagesContainer" class="messages-container flex-grow-1 mb-3 rz-background-color-base-600" 
+             style="height: 400px; overflow-y: auto; padding: 1rem; border-radius: 8px;">
+            @if (Messages.Any())
+            {
+                @foreach (var message in Messages)
+                {
+                    <div class="message mb-3 @(message.SenderId == CurrentUserId ? "sent" : "received")">
+                        <RadzenCard Variant="Variant.Filled" 
+                                    Class="@(message.SenderId == CurrentUserId ? "bg-primary text-white ms-auto" : "bg-secondary")" 
+                                    Style="@GetMessageStyle(message.SenderId == CurrentUserId)">
+                    
+                            <MessageRenderer Message="message" 
+                                             OnImageClick="HandleImageClick"
+                                             OnFileDownload="HandleFileDownload" />
+                    
+                            <RadzenText TextStyle="TextStyle.Caption" Class="@(message.SenderId == CurrentUserId ? "text-white-50" : "text-muted")">
+                                @message.SentAt.ToString("HH:mm")
+                            </RadzenText>
+                        </RadzenCard>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="text-center text-muted">
+                    <RadzenText>Henüz mesaj yok. Konuşmaya başlayın!</RadzenText>
+                </div>
+            }
+        </div>
+        <!-- Message Input -->
+        <RadzenStack Gap="0.5rem">
+            <!-- Dosya upload alanı -->
+            <RadzenCard Variant="Variant.Outlined">
+                <RadzenUpload Url="upload/media" Style="width: 100%" 
+                              Complete="@OnUploadComplete"
+                              Progress="@OnUploadProgress"
+                              Accept="image/*,video/*,audio/*,*" ChooseText="Dosya Seç"
+                              InputAttributes="@(new Dictionary<string,object>{ { "aria-label", "Dosya seç" }})" />
+            </RadzenCard>
+            
+            <!-- Text mesaj alanı -->
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                <RadzenTextBox @bind-Value="newMessage" Placeholder="Mesajınızı yazın..." 
+                              Style="flex: 1;" @onkeypress="HandleKeyPress" />
+                <RadzenButton Icon="send" Variant="Variant.Filled" Click="SendMessage" 
+                              Disabled="@string.IsNullOrWhiteSpace(newMessage)" />
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenCard>
+}
+else
+{
+    <RadzenCard Class="h-100 d-flex align-items-center justify-content-center">
+        <RadzenText TextStyle="TextStyle.H6" Class="text-muted">Bir sohbet seçin</RadzenText>
+    </RadzenCard>
+}
+
+@code {
+    [Parameter] public ChatUser? SelectedUser { get; set; }
+    [Parameter] public List<ChatMessage> Messages { get; set; } = new();
+    [Parameter] public EventCallback<ChatMessage> OnMessageSent { get; set; }
+    [Parameter] public Guid CurrentUserId { get; set; }
+    
+    private ElementReference messagesContainer;
+    private string newMessage = "";
+    
+    // Radzen FileInput için
+   
+    private string uploadMessage = "";
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Messages.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", messagesContainer);
+        }
+    }
+    
+    private string GetMessageStyle(bool isSent)
+    {
+        return isSent ? "max-width: 70%; margin-left: auto;" : "max-width: 70%;";
+    }
+    
+    private async Task HandleImageClick(string imageUrl)
+    {
+        await JSRuntime.InvokeVoidAsync("open", imageUrl, "_blank");
+    }
+
+    private async Task HandleFileDownload((string Url, string FileName) fileInfo)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("open", fileInfo.Url, "_blank");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"File download error: {ex.Message}");
+        }
+    }
+    
+    
+    void OnUploadComplete(UploadCompleteEventArgs args)
+    {
+        try
+        {
+            Console.WriteLine($"Raw response: {args.RawResponse}");
+        
+            if (string.IsNullOrEmpty(args.RawResponse))
+            {
+                Console.WriteLine("Empty response received");
+                return;
+            }
+
+            var response = System.Text.Json.JsonSerializer.Deserialize<UploadResponse>(args.RawResponse, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        
+            if (response != null && SelectedUser != null)
+            {
+                // SignalR ile medya mesajını gönder
+                InvokeAsync(async () =>
+                {
+                    if (SelectedUser.UserType == UserType.Group)
+                    {
+                        await SignalRService.SendMediaMessageToGroupAsync(
+                            SelectedUser.Id.ToString(),
+                            $"[{response.MessageType}] {response.FileName}",
+                            response.MessageType,
+                            response.Url,
+                            response.FileName,
+                            response.FileSize,
+                            response.MimeType
+                        );
+                    }
+                    else
+                    {
+                        await SignalRService.SendMediaMessageToUserAsync(
+                            SelectedUser.Id.ToString(),
+                            $"[{response.MessageType}] {response.FileName}",
+                            response.MessageType,
+                            response.Url,
+                            response.FileName,
+                            response.FileSize,
+                            response.MimeType
+                        );
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload error: {ex.Message}");
+            Console.WriteLine($"Raw response was: {args.RawResponse}");
+        }
+    }
+    
+    void OnUploadProgress(UploadProgressArgs args)
+    {
+        uploadMessage = $"Yükleniyor: {args.Progress}%";
+        StateHasChanged();
+    }
+
+    
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage) || SelectedUser == null) return;
+        
+        var message = new ChatMessageModel
+        {
+            Id = Guid.NewGuid(),
+            SenderId = CurrentUserId,
+            ReceiverId = SelectedUser.UserType == UserType.User ? SelectedUser.Id : null,
+            GroupId = SelectedUser.UserType == UserType.Group ? SelectedUser.Id : null,
+            Content = newMessage.Trim(),
+            MessageType = MessageType.Text,
+            SentAt = DateTime.Now,
+            IsRead = false
+        };
+        
+        // SignalR ile gönder
+        if (SelectedUser.UserType == UserType.Group)
+        {
+            await SignalRService.SendMessageToGroupAsync(SelectedUser.Id.ToString(), message.Content);
+        }
+        else
+        {
+            await SignalRService.SendMessageToUserAsync(SelectedUser.Id.ToString(), message.Content);
+        }
+        
+        newMessage = "";
+    }
+    
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+    
+     
+     
+}

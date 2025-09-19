@@ -1,0 +1,137 @@
+@using BlazorChatApp.Models.Chat
+@using BlazorChatApp.Models.Identity
+@using BlazorChatApp.Services
+@using Radzen
+@using Radzen.Blazor
+
+@inject GroupService GroupService
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<RadzenCard>
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6">Yeni Grup Oluştur</RadzenText>
+
+        <RadzenStack Gap="0.75rem">
+            <RadzenFormField Text="Grup Adı" Variant="Variant.Outlined">
+                <RadzenTextBox @bind-Value="groupName" Placeholder="Grup adını girin..." />
+            </RadzenFormField>
+
+            <RadzenFormField Text="Açıklama (İsteğe Bağlı)" Variant="Variant.Outlined">
+                <RadzenTextArea @bind-Value="groupDescription" Placeholder="Grup açıklaması..." Rows="3" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="Grup Avatarı" Variant="Variant.Outlined">
+                <RadzenDropDown @bind-Value="selectedAvatar" Data="@avatarOptions" 
+                               TextProperty="Text" ValueProperty="Value" 
+                               Placeholder="Avatar seçin..." />
+            </RadzenFormField>
+
+            @if (!string.IsNullOrEmpty(selectedAvatar))
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenText TextStyle="TextStyle.Caption">Önizleme:</RadzenText>
+                    <RadzenImage Path="@selectedAvatar" Style="width: 40px; height: 40px; border-radius: 50%;" />
+                </RadzenStack>
+            }
+        </RadzenStack>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger">@errorMessage</RadzenAlert>
+        }
+
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Success">@successMessage</RadzenAlert>
+        }
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="İptal" Click="Cancel" Variant="Variant.Text" />
+            <RadzenButton Text="Grup Oluştur" Click="CreateGroupClick" 
+                         Variant="Variant.Filled" Disabled="@(string.IsNullOrWhiteSpace(groupName) || isCreating)" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    [Parameter] public EventCallback OnGroupCreated { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string groupName = "";
+    private string groupDescription = "";
+    private string selectedAvatar = "pics/group.png";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isCreating = false;
+    private Guid currentUserId;
+
+    private List<AvatarOption> avatarOptions = new()
+    {
+        new() { Text = "Varsayılan Grup", Value = "pics/group.png" },
+        new() { Text = "İş Grubu", Value = "pics/business-group.png" },
+        new() { Text = "Arkadaş Grubu", Value = "pics/friends-group.png" },
+        new() { Text = "Aile Grubu", Value = "pics/family-group.png" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id;
+        }
+    }
+
+    private async Task CreateGroupClick()
+    {
+        errorMessage = "";
+        successMessage = "";
+        isCreating = true;
+
+        if (string.IsNullOrWhiteSpace(groupName))
+        {
+            errorMessage = "Grup adı gereklidir";
+            isCreating = false;
+            return;
+        }
+
+        try
+        {
+            var group = await GroupService.CreateGroupAsync(
+                groupName.Trim(), 
+                groupDescription?.Trim(), 
+                selectedAvatar, 
+                currentUserId);
+
+            successMessage = "Grup başarıyla oluşturuldu!";
+            
+            // Form temizle
+            groupName = "";
+            groupDescription = "";
+            selectedAvatar = "pics/group.png";
+
+            await OnGroupCreated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Grup oluşturulurken bir hata oluştu";
+        }
+        finally
+        {
+            isCreating = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+
+    public class AvatarOption
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+}

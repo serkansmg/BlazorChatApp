@@ -1,0 +1,277 @@
+@using BlazorChatApp.Models.Chat
+@using BlazorChatApp.Models.Identity
+@using BlazorChatApp.Services
+@using Radzen
+@using Radzen.Blazor
+
+@inject GroupService GroupService
+@inject FriendService FriendService
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<RadzenCard>
+    <RadzenStack Gap="1rem">
+        <RadzenText TextStyle="TextStyle.H6">
+            @if (IsEditMode)
+            {
+                <span>@GroupName - Üye Yönetimi</span>
+            }
+            else
+            {
+                <span>Gruba Üye Ekle</span>
+            }
+        </RadzenText>
+
+        @if (friends.Any())
+        {
+            <RadzenFormField Text="Aramak için yazın:" Variant="Variant.Outlined">
+                <RadzenTextBox @bind-Value="searchText" @onchange="FilterFriends" Placeholder="Arkadaş ara..." />
+            </RadzenFormField>
+
+            <div style="max-height: 300px; overflow-y: auto;">
+                <RadzenStack Gap="0.5rem">
+                    @foreach (var friend in filteredFriends)
+                    {
+                        var isSelected = selectedFriendIds.Contains(friend.Id);
+                        var isAlreadyMember = IsEditMode && existingMemberIds.Contains(friend.Id);
+                        
+                        <RadzenCard Variant="Variant.Outlined" 
+                                   Style="@GetFriendCardStyle(isSelected, isAlreadyMember)">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" 
+                                       JustifyContent="JustifyContent.SpaceBetween">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                                    <RadzenImage Path="@friend.AvatarUrl" Style="width: 40px; height: 40px; border-radius: 50%;" />
+                                    <RadzenStack Orientation="Orientation.Vertical" Gap="0">
+                                        <RadzenText TextStyle="TextStyle.Subtitle2">@friend.DisplayName</RadzenText>
+                                        <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">@friend.Email</RadzenText>
+                                    </RadzenStack>
+                                </RadzenStack>
+                                
+                                @if (isAlreadyMember)
+                                {
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Üye" />
+                                        <RadzenButton Icon="remove_circle" 
+                                                     ButtonStyle="ButtonStyle.Danger" 
+                                                     Variant="Variant.Text" 
+                                                     Size="ButtonSize.Small"
+                                                     Click="@(() => RemoveMember(friend.Id))"
+                                                     Disabled="@isProcessing" />
+                                    </RadzenStack>
+                                }
+                                else
+                                {
+                                    <RadzenCheckBox @bind-Value="@isSelected" 
+                                                   Change="@((bool value) => ToggleFriendSelection(friend.Id, value))"
+                                                   Disabled="@isProcessing" />
+                                }
+                            </RadzenStack>
+                        </RadzenCard>
+                    }
+                </RadzenStack>
+            </div>
+
+            @if (selectedFriendIds.Any())
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info">
+                    @selectedFriendIds.Count arkadaş seçildi
+                </RadzenAlert>
+            }
+        }
+        else
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info">
+                Henüz arkadaşınız yok. Önce arkadaş ekleyin.
+            </RadzenAlert>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Danger">@errorMessage</RadzenAlert>
+        }
+
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Success">@successMessage</RadzenAlert>
+        }
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="İptal" Click="Cancel" Variant="Variant.Text" Disabled="@isProcessing" />
+            @if (!IsEditMode || selectedFriendIds.Any())
+            {
+                <RadzenButton Text="@GetActionButtonText()" Click="ProcessMembers" 
+                             Variant="Variant.Filled" 
+                             Disabled="@(!selectedFriendIds.Any() || isProcessing)" />
+            }
+        </RadzenStack>
+    </RadzenStack>
+</RadzenCard>
+
+@code {
+    [Parameter] public Guid? GroupId { get; set; }
+    [Parameter] public string GroupName { get; set; } = "";
+    [Parameter] public bool IsEditMode { get; set; } = false;
+    [Parameter] public EventCallback OnMembersProcessed { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private List<AppUser> friends = new();
+    private List<AppUser> filteredFriends = new();
+    private HashSet<Guid> selectedFriendIds = new();
+    private HashSet<Guid> existingMemberIds = new();
+    private string searchText = "";
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isProcessing = false;
+    private Guid currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id;
+            await LoadFriends();
+            
+            if (IsEditMode && GroupId.HasValue)
+            {
+                await LoadExistingMembers();
+            }
+        }
+    }
+
+    private async Task LoadFriends()
+    {
+        try
+        {
+            friends = await FriendService.GetUserFriendsAsync(currentUserId);
+            filteredFriends = friends.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Arkadaş listesi yüklenirken hata oluştu";
+        }
+    }
+
+    private async Task LoadExistingMembers()
+    {
+        if (!GroupId.HasValue) return;
+        
+        try
+        {
+            var members = await GroupService.GetGroupMembersAsync(GroupId.Value);
+            existingMemberIds = members.Select(m => m.UserId).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Mevcut üyeler yüklenirken hata oluştu";
+        }
+    }
+
+    private void FilterFriends()
+    {
+        if (string.IsNullOrEmpty(searchText))
+        {
+            filteredFriends = friends.ToList();
+        }
+        else
+        {
+            filteredFriends = friends
+                .Where(f => f.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                           f.Email.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        StateHasChanged();
+    }
+
+    private void ToggleFriendSelection(Guid friendId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            selectedFriendIds.Add(friendId);
+        }
+        else
+        {
+            selectedFriendIds.Remove(friendId);
+        }
+    }
+
+    private async Task ProcessMembers()
+    {
+        if (!selectedFriendIds.Any()) return;
+
+        errorMessage = "";
+        successMessage = "";
+        isProcessing = true;
+
+        try
+        {
+            if (IsEditMode && GroupId.HasValue)
+            {
+                // Mevcut gruba üye ekle
+                await GroupService.AddMembersToGroupAsync(GroupId.Value, selectedFriendIds.ToList());
+                successMessage = $"{selectedFriendIds.Count} üye gruba eklendi";
+            }
+            else if (GroupId.HasValue)
+            {
+                // Yeni oluşturulan gruba üye ekle
+                await GroupService.AddMembersToGroupAsync(GroupId.Value, selectedFriendIds.ToList());
+                successMessage = $"{selectedFriendIds.Count} üye gruba eklendi";
+            }
+
+            selectedFriendIds.Clear();
+            await OnMembersProcessed.InvokeAsync();
+            
+            if (IsEditMode)
+            {
+                await LoadExistingMembers(); // Listeyi güncelle
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Üyeler eklenirken hata oluştu";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task RemoveMember(Guid memberId)
+    {
+        if (!GroupId.HasValue) return;
+
+        try
+        {
+            await GroupService.RemoveMemberFromGroupAsync(GroupId.Value, memberId);
+            existingMemberIds.Remove(memberId);
+            successMessage = "Üye gruptan çıkarıldı";
+            await OnMembersProcessed.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Üye çıkarılırken hata oluştu";
+        }
+    }
+
+    private string GetFriendCardStyle(bool isSelected, bool isAlreadyMember)
+    {
+        if (isAlreadyMember)
+            return "border-color: #28a745; background-color: rgba(40, 167, 69, 0.1);";
+        if (isSelected)
+            return "border-color: #007bff; background-color: rgba(0, 123, 255, 0.1);";
+        return "";
+    }
+
+    private string GetActionButtonText()
+    {
+        if (IsEditMode)
+            return "Seçili Üyeleri Ekle";
+        return "Gruba Ekle";
+    }
+
+    private async Task Cancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+}

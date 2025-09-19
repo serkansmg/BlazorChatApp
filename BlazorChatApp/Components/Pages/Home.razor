@@ -1,0 +1,351 @@
+﻿@page "/"
+
+@rendermode InteractiveServer
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ChatState ChatState
+@inject EventBus EventBus
+@inject SignalRService SignalRService
+@inject GroupService GroupService
+@using Group = BlazorChatApp.Models.Identity.Group
+@implements IDisposable
+@attribute [Authorize]
+<PageTitle>Ana Sayfa - Chat</PageTitle>
+
+<RadzenRow Gap="1rem" Style="height: calc(100vh - 120px);">
+    <RadzenColumn Size="4">
+        <RadzenStack Gap="1rem">
+            <!-- Arkadaş ekleme ve Grup oluşturma butonları -->
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                <RadzenButton Text="Arkadaş Ekle" Click="ToggleAddFriend" 
+                             Variant="@(showAddFriend ? Variant.Filled : Variant.Outlined)" 
+                             Size="ButtonSize.Small" Style="flex: 1;" />
+                <RadzenButton Text="Grup Oluştur" Click="ToggleCreateGroup" 
+                             Variant="@(showCreateGroup ? Variant.Filled : Variant.Outlined)" 
+                             Size="ButtonSize.Small" Style="flex: 1;" />
+            </RadzenStack>
+        
+            @if (showAddFriend)
+            {
+                <AddFriend OnFriendRequestSent="OnFriendRequestSent" />
+            }
+
+            @if (showCreateGroup)
+            {
+                <CreateGroup OnGroupCreated="OnGroupCreated" OnCancel="OnCreateGroupCancel" />
+            }
+
+            @if (showGroupMemberManager && selectedGroupForMembers != null)
+            {
+                <GroupMemberManager GroupId="@selectedGroupForMembers.Id" 
+                                  GroupName="@selectedGroupForMembers.Name"
+                                  IsEditMode="false"
+                                  OnMembersProcessed="OnMembersProcessed" 
+                                  OnCancel="OnGroupMemberManagerCancel" />
+            }
+        
+            <!-- Arkadaşlık istekleri -->
+            <FriendRequests @ref="friendRequestsRef" OnRequestProcessed="OnRequestProcessed" />
+        
+            <UserList Users="@chatUsers" OnUserSelected="HandleUserSelected" />
+        </RadzenStack>
+    </RadzenColumn>   
+    <RadzenColumn Size="8">
+        <ChatPanel SelectedUser="@selectedUser" 
+                   Messages="@currentMessages" 
+                   OnMessageSent="HandleMessageSent"
+                   CurrentUserId="@currentUserId" />
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    private List<ChatUser> chatUsers = new();
+    private ChatUser? selectedUser;
+    private Guid currentUserId;
+    private List<ChatMessageModel> currentMessages = new();
+    private bool _signalRInitialized = false;
+    private bool showAddFriend = false;
+    private bool showCreateGroup = false;
+    private bool showGroupMemberManager = false;
+    private Group? selectedGroupForMembers;
+    private FriendRequests? friendRequestsRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        
+        // EventBus event'lerini dinle
+        EventBus.MessageReceived += OnMessageReceived;
+        EventBus.UserStatusChanged += OnUserStatusChanged;
+        EventBus.UnreadCountChanged += OnUnreadCountChanged;
+        EventBus.FriendRequestReceived += OnFriendRequestReceived;
+        
+        // Database'den chat kullanıcılarını yükle
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_signalRInitialized)
+        {
+            try
+            {
+                await SignalRService.InitializeAsync();
+                _signalRInitialized = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"SignalR initialization failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void OnFriendRequestReceived(object data)
+    {
+        InvokeAsync(async () =>
+        {
+            Console.WriteLine("Friend request received in Home component");
+        
+            if (friendRequestsRef != null)
+            {
+                Console.WriteLine("Calling friendRequestsRef.RefreshAsync()");
+                await friendRequestsRef.RefreshAsync();
+            }
+            else
+            {
+                Console.WriteLine("friendRequestsRef is null!");
+            }
+        
+            StateHasChanged();
+        });
+    }
+    
+    private async Task OnRequestProcessed()
+    {
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id;
+        }
+    }
+    
+    private void LoadChatUsers()
+    {
+        chatUsers = ChatState.GetChatUsers();
+        StateHasChanged();
+    }
+    
+    private async Task HandleUserSelected(ChatUser user)
+    {
+        selectedUser = user;
+
+        if (selectedUser.UserType == UserType.Group)
+        {
+            await SignalRService.JoinGroupAsync(selectedUser.Id.ToString());
+        }
+
+        await LoadMessagesForSelectedUser();
+
+        if (selectedUser != null)
+        {
+            if (selectedUser.UserType == UserType.User)
+            {
+                await ChatState.MarkMessagesAsReadAsync(currentUserId, selectedUser.Id);
+            }
+            else if (selectedUser.UserType == UserType.Group)
+            {
+                await ChatState.MarkGroupMessagesAsReadAsync(currentUserId, selectedUser.Id);
+            }
+        }
+    }
+    
+    private async Task LoadMessagesForSelectedUser()
+    {
+        if (selectedUser == null) 
+        {
+            currentMessages = new List<ChatMessageModel>();
+            return;
+        }
+        
+        if (selectedUser.UserType == UserType.Group)
+        {
+            currentMessages = await ChatState.GetMessagesForGroupAsync(selectedUser.Id);
+        }
+        else
+        {
+            currentMessages = await ChatState.GetMessagesForUserAsync(currentUserId, selectedUser.Id);
+        }
+        
+        StateHasChanged();
+    }
+    
+    private async Task HandleMessageSent(ChatMessageModel message)
+    {
+        await ChatState.AddMessageAsync(message);
+        await LoadMessagesForSelectedUser();
+    }
+    
+    // Event handlers
+   private void OnMessageReceived(ChatMessageModel message)
+{
+    InvokeAsync(async () =>
+    {
+        Console.WriteLine($"Home.OnMessageReceived - MessageType: {message.MessageType}, Content: {message.Content}");
+        
+        // ÖNCELİKLE: Gelen mesajı cache'e ekle (hem user hem grup için)
+        await ChatState.AddMessageToCacheAsync(message);
+        
+        // User listesini database'den güncelle (okunmamış sayılar için)
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+        
+        // Eğer mesaj seçili kullanıcı/gruptan geliyorsa, UI'yi güncelle
+        if (selectedUser != null)
+        {
+            Console.WriteLine($"Selected user: {selectedUser.Id}, UserType: {selectedUser.UserType}");
+            
+            bool shouldUpdateMessages = false;
+            
+            if (selectedUser.UserType == UserType.Group && message.GroupId == selectedUser.Id)
+            {
+                shouldUpdateMessages = true;
+                Console.WriteLine("Should update - Group message match");
+            }
+            else if (selectedUser.UserType == UserType.User)
+            {
+                shouldUpdateMessages = (message.SenderId == selectedUser.Id && message.ReceiverId == currentUserId) ||
+                                       (message.SenderId == currentUserId && message.ReceiverId == selectedUser.Id);
+                Console.WriteLine($"Should update - User message match: {shouldUpdateMessages}");
+            }
+            
+            if (shouldUpdateMessages)
+            {
+                Console.WriteLine("Updating messages...");
+                // Cache'den mesajları yeniden yükle
+                await LoadMessagesForSelectedUser();
+                
+                // Kişisel mesaj ise okundu olarak işaretle
+                if (message.SenderId == selectedUser.Id && selectedUser.UserType == UserType.User)
+                {
+                    await ChatState.MarkMessagesAsReadAsync(currentUserId, selectedUser.Id);
+                    // User listesini tekrar güncelle
+                    await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+                    LoadChatUsers();
+                }
+            }
+        }
+        
+        StateHasChanged();
+    });
+}
+
+    private string GetConversationKey(Guid userId1, Guid userId2)
+    {
+        var ids = new[] { userId1, userId2 }.OrderBy(id => id).ToArray();
+        return $"{ids[0]}-{ids[1]}";
+    }
+    
+    private void OnUserStatusChanged(ChatUser user)
+    {
+        InvokeAsync(() =>
+        {
+            LoadChatUsers();
+            StateHasChanged();
+        });
+    }
+    
+    private void OnUnreadCountChanged(Guid userId, int count)
+    {
+        InvokeAsync(() =>
+        {
+            var user = chatUsers.FirstOrDefault(u => u.Id == userId);
+            if (user != null)
+            {
+                user.UnreadMessageCount = count;
+                StateHasChanged();
+            }
+        });
+    }
+    
+    // UI Toggle metodları
+    private void ToggleAddFriend()
+    {
+        showAddFriend = !showAddFriend;
+        if (showAddFriend)
+        {
+            showCreateGroup = false;
+            showGroupMemberManager = false;
+        }
+    }
+
+    private void ToggleCreateGroup()
+    {
+        showCreateGroup = !showCreateGroup;
+        if (showCreateGroup)
+        {
+            showAddFriend = false;
+            showGroupMemberManager = false;
+        }
+    }
+
+    private async Task OnFriendRequestSent()
+    {
+        showAddFriend = false;
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+    }
+
+    private async Task OnGroupCreated()
+    {
+        // Grup oluşturulduktan sonra üye ekleme ekranını göster
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+        
+        // Son oluşturulan grubu bul
+        var userGroups = await GroupService.GetUserGroupsAsync(currentUserId);
+        selectedGroupForMembers = userGroups.OrderByDescending(g => g.CreatedAt).FirstOrDefault();
+        
+        if (selectedGroupForMembers != null)
+        {
+            showCreateGroup = false;
+            showGroupMemberManager = true;
+        }
+    }
+
+    private void OnCreateGroupCancel()
+    {
+        showCreateGroup = false;
+    }
+
+    private async Task OnMembersProcessed()
+    {
+        showGroupMemberManager = false;
+        selectedGroupForMembers = null;
+        
+        // Chat listesini güncelle
+        await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
+        LoadChatUsers();
+    }
+
+    private void OnGroupMemberManagerCancel()
+    {
+        showGroupMemberManager = false;
+        selectedGroupForMembers = null;
+    }
+    
+    public void Dispose()
+    {
+        EventBus.MessageReceived -= OnMessageReceived;
+        EventBus.UserStatusChanged -= OnUserStatusChanged;
+        EventBus.UnreadCountChanged -= OnUnreadCountChanged;
+        EventBus.FriendRequestReceived -= OnFriendRequestReceived;
+    }
+}
