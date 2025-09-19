@@ -1,0 +1,213 @@
+@using BlazorChatApp.Models.Video
+@using BlazorChatApp.Services
+@using Radzen
+@using Radzen.Blazor
+@inject IVideoConferenceService VideoService
+@inject UserManager<AppUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
+
+<RadzenCard Class="h-100">
+    @if (isInRoom)
+    {
+        <!-- Video Room UI -->
+        <RadzenStack Gap="1rem" Class="h-100">
+            <!-- Header -->
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                <RadzenText TextStyle="TextStyle.H5">@roomInfo?.RoomName</RadzenText>
+                <RadzenButton Text="Odadan Çık" Click="LeaveRoom" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" />
+            </RadzenStack>
+
+            <!-- Video Grid -->
+            <div class="video-grid" style="flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                @foreach (var participant in participants)
+                {
+                    <VideoParticipantCard Participant="participant" IsLocal="@(participant.UserId == currentUserId)" />
+                }
+            </div>
+
+            <!-- Controls -->
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.Center" Gap="1rem">
+                <RadzenButton Icon="@(isMuted ? "mic_off" : "mic")" 
+                             Click="ToggleMute" 
+                             ButtonStyle="@(isMuted ? ButtonStyle.Danger : ButtonStyle.Success)"
+                             Variant="Variant.Filled" />
+                             
+                <RadzenButton Icon="@(isVideoEnabled ? "videocam" : "videocam_off")" 
+                             Click="ToggleVideo" 
+                             ButtonStyle="@(isVideoEnabled ? ButtonStyle.Success : ButtonStyle.Danger)"
+                             Variant="Variant.Filled" />
+                             
+                <RadzenButton Icon="screen_share" 
+                             Click="ToggleScreenShare" 
+                             ButtonStyle="@(isScreenSharing ? ButtonStyle.Warning : ButtonStyle.Secondary)"
+                             Variant="Variant.Filled" />
+            </RadzenStack>
+        </RadzenStack>
+    }
+    else
+    {
+        <!-- Join Room UI -->
+        <RadzenStack Gap="1rem" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Class="h-100">
+            <RadzenText TextStyle="TextStyle.H4">Video Konferans</RadzenText>
+            
+            @if (string.IsNullOrEmpty(RoomId))
+            {
+                <!-- Create Room -->
+                <RadzenStack Gap="0.75rem" Style="width: 300px;">
+                    <RadzenFormField Text="Oda Adı">
+                        <RadzenTextBox @bind-Value="newRoomName" Placeholder="Oda adı girin..." />
+                    </RadzenFormField>
+                    
+                    <RadzenFormField Text="Maksimum Katılımcı">
+                        <RadzenNumeric @bind-Value="maxParticipants" Min="2" Max="50" />
+                    </RadzenFormField>
+                    
+                    <RadzenButton Text="Oda Oluştur" Click="CreateRoom" 
+                                 Variant="Variant.Filled" Style="width: 100%;"
+                                 Disabled="@(string.IsNullOrWhiteSpace(newRoomName) || isLoading)" />
+                </RadzenStack>
+            }
+            else
+            {
+                <!-- Join Existing Room -->
+                <RadzenText>Odaya katılmak için hazır mısınız?</RadzenText>
+                <RadzenButton Text="Odaya Katıl" Click="JoinRoom" 
+                             Variant="Variant.Filled" 
+                             Disabled="@isLoading" />
+            }
+            
+            @if (isLoading)
+            {
+                <RadzenProgressBarCircular ShowValue="false" />
+            }
+        </RadzenStack>
+    }
+</RadzenCard>
+
+@code {
+    [Parameter] public string? RoomId { get; set; }
+    
+    private bool isInRoom = false;
+    private bool isLoading = false;
+    private bool isMuted = false;
+    private bool isVideoEnabled = true;
+    private bool isScreenSharing = false;
+    
+    private string newRoomName = "";
+    private int maxParticipants = 8;
+    private string currentUserId = "";
+    private string currentUserName = "";
+    
+    private VideoRoomInfo? roomInfo;
+    private List<VideoParticipant> participants = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+        
+        if (!string.IsNullOrEmpty(RoomId))
+        {
+            roomInfo = await VideoService.GetRoomInfoAsync(RoomId);
+        }
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user != null)
+        {
+            currentUserId = user.Id.ToString();
+            currentUserName = user.DisplayName;
+        }
+    }
+
+    private async Task CreateRoom()
+    {
+        if (string.IsNullOrWhiteSpace(newRoomName)) return;
+        
+        isLoading = true;
+        try
+        {
+            roomInfo = await VideoService.CreateRoomAsync(newRoomName, maxParticipants, currentUserId);
+            RoomId = roomInfo.RoomId;
+            await JoinRoom();
+        }
+        catch (Exception ex)
+        {
+            // Error handling
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task JoinRoom()
+    {
+        if (string.IsNullOrEmpty(RoomId)) return;
+        
+        isLoading = true;
+        try
+        {
+            roomInfo = await VideoService.JoinRoomAsync(RoomId, currentUserId, currentUserName);
+            participants = await VideoService.GetRoomParticipantsAsync(RoomId);
+            
+            // WebRTC bağlantısını başlat
+            await InitializeWebRTC();
+            
+            isInRoom = true;
+        }
+        catch (Exception ex)
+        {
+            // Error handling
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LeaveRoom()
+    {
+        if (string.IsNullOrEmpty(RoomId)) return;
+        
+        await VideoService.LeaveRoomAsync(RoomId, currentUserId);
+        await CleanupWebRTC();
+        
+        isInRoom = false;
+        participants.Clear();
+    }
+
+    private async Task ToggleMute()
+    {
+        isMuted = !isMuted;
+        await VideoService.ToggleParticipantMediaAsync(RoomId!, currentUserId, isMuted, isVideoEnabled);
+        await JSRuntime.InvokeVoidAsync("toggleMute", isMuted);
+    }
+
+    private async Task ToggleVideo()
+    {
+        isVideoEnabled = !isVideoEnabled;
+        await VideoService.ToggleParticipantMediaAsync(RoomId!, currentUserId, isMuted, isVideoEnabled);
+        await JSRuntime.InvokeVoidAsync("toggleVideo", isVideoEnabled);
+    }
+
+    private async Task ToggleScreenShare()
+    {
+        isScreenSharing = !isScreenSharing;
+        await JSRuntime.InvokeVoidAsync("toggleScreenShare", isScreenSharing);
+    }
+
+    private async Task InitializeWebRTC()
+    {
+        // WebRTC initialization
+        await JSRuntime.InvokeVoidAsync("initializeWebRTC", roomInfo?.ConnectionParams);
+    }
+
+    private async Task CleanupWebRTC()
+    {
+        await JSRuntime.InvokeVoidAsync("cleanupWebRTC");
+    }
+}

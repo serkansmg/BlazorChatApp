@@ -1,0 +1,208 @@
+@using BlazorChatApp.Models.Video
+@using BlazorChatApp.Models.Chat
+@using BlazorChatApp.Services
+@using Radzen
+@using Radzen.Blazor
+@inject IVideoConferenceService VideoService
+@inject IMessageService MessageService
+@inject IJSRuntime JSRuntime
+
+<RadzenCard Class="video-call-container" Style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; background: #1a1a1a;">
+    @if (isConnecting)
+    {
+        <!-- Connecting State -->
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Class="h-100" Gap="1rem">
+            <RadzenProgressBarCircular ShowValue="false" />
+            <RadzenText Style="color: white;">@TargetUser.Name ile bağlantı kuruluyor...</RadzenText>
+            <RadzenButton Text="İptal" Click="EndCall" ButtonStyle="ButtonStyle.Danger" />
+        </RadzenStack>
+    }
+    else if (isInCall)
+    {
+        <!-- Video Call UI -->
+        <div class="video-call-layout" style="height: 100%; display: flex; flex-direction: column;">
+            <!-- Remote Video (Main) -->
+            <div style="flex: 1; position: relative; background: #000;">
+                <video id="remote-video" style="width: 100%; height: 100%; object-fit: cover;" autoplay playsinline></video>
+                
+                <!-- Call Info Overlay -->
+                <div style="position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 8px;">
+                    <RadzenText Style="color: white;">@TargetUser.Name</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" Style="color: #ccc;">@callDuration</RadzenText>
+                </div>
+            </div>
+            
+            <!-- Local Video (Picture-in-Picture) -->
+            <div style="position: absolute; top: 20px; right: 20px; width: 200px; height: 150px; background: #333; border-radius: 8px; overflow: hidden;">
+                <video id="local-video" style="width: 100%; height: 100%; object-fit: cover;" autoplay muted playsinline></video>
+                @if (!isVideoEnabled)
+                {
+                    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #333; display: flex; align-items: center; justify-content: center;">
+                        <RadzenIcon Icon="videocam_off" Style="color: white; font-size: 24px;" />
+                    </div>
+                }
+            </div>
+            
+            <!-- Call Controls -->
+            <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem;">
+                <RadzenButton Icon="@(isMuted ? "mic_off" : "mic")" 
+                             Click="ToggleMute" 
+                             ButtonStyle="@(isMuted ? ButtonStyle.Danger : ButtonStyle.Success)"
+                             Style="width: 60px; height: 60px; border-radius: 50%;" />
+                             
+                <RadzenButton Icon="call_end" 
+                             Click="EndCall" 
+                             ButtonStyle="ButtonStyle.Danger"
+                             Style="width: 60px; height: 60px; border-radius: 50%;" />
+                             
+                <RadzenButton Icon="@(isVideoEnabled ? "videocam" : "videocam_off")" 
+                             Click="ToggleVideo" 
+                             ButtonStyle="@(isVideoEnabled ? ButtonStyle.Success : ButtonStyle.Danger)"
+                             Style="width: 60px; height: 60px; border-radius: 50%;" />
+            </div>
+        </div>
+    }
+    else if (isReceivingCall)
+    {
+        <!-- Incoming Call UI -->
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Class="h-100" Gap="2rem">
+            <RadzenImage Path="@TargetUser.AvatarUrl" Style="width: 120px; height: 120px; border-radius: 50%;" />
+            <RadzenText TextStyle="TextStyle.H4" Style="color: white;">@TargetUser.Name arıyor...</RadzenText>
+            
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem">
+                <RadzenButton Icon="call_end" Click="RejectCall" ButtonStyle="ButtonStyle.Danger" 
+                             Style="width: 80px; height: 80px; border-radius: 50%;" />
+                <RadzenButton Icon="call" Click="AcceptCall" ButtonStyle="ButtonStyle.Success" 
+                             Style="width: 80px; height: 80px; border-radius: 50%;" />
+            </RadzenStack>
+        </RadzenStack>
+    }
+</RadzenCard>
+
+@code {
+    [Parameter] public ChatUser TargetUser { get; set; } = null!;
+    [Parameter] public Guid CurrentUserId { get; set; }
+    [Parameter] public EventCallback OnCallEnded { get; set; }
+    
+    private bool isConnecting = false;
+    private bool isInCall = false;
+    private bool isReceivingCall = false;
+    private bool isMuted = false;
+    private bool isVideoEnabled = true;
+    private string callDuration = "00:00";
+    private DateTime callStartTime;
+    private Timer? durationTimer;
+    private string? roomId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitiateCall();
+    }
+
+    private async Task InitiateCall()
+    {
+        isConnecting = true;
+        
+        try
+        {
+            // Video room oluştur (2 kişilik)
+            var room = await VideoService.CreateRoomAsync($"Call-{CurrentUserId}-{TargetUser.Id}", 2, CurrentUserId.ToString());
+            roomId = room.RoomId;
+            
+            // Karşı tarafa call signal gönder
+            await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "incoming_call", roomId);
+            
+            // WebRTC bağlantısını hazırla
+            await JSRuntime.InvokeVoidAsync("initializeVideoCall", room.ConnectionParams);
+            
+            // Timeout için timer başlat (30 saniye)
+            _ = Task.Delay(30000).ContinueWith(async _ => 
+            {
+                if (isConnecting)
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await EndCall();
+                        StateHasChanged();
+                    });
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            await EndCall();
+        }
+    }
+
+    private async Task AcceptCall()
+    {
+        isReceivingCall = false;
+        isInCall = true;
+        callStartTime = DateTime.Now;
+        
+        // Join room
+        if (!string.IsNullOrEmpty(roomId))
+        {
+            await VideoService.JoinRoomAsync(roomId, CurrentUserId.ToString(), "User");
+        }
+        
+        // Karşı tarafa kabul signal'i gönder
+        await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "call_accepted", roomId);
+        
+        // Call duration timer başlat
+        durationTimer = new Timer(UpdateCallDuration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        
+        await JSRuntime.InvokeVoidAsync("startVideoCall");
+    }
+
+    private async Task RejectCall()
+    {
+        await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "call_rejected", roomId);
+        await EndCall();
+    }
+
+    private async Task EndCall()
+    {
+        isConnecting = false;
+        isInCall = false;
+        isReceivingCall = false;
+        
+        durationTimer?.Dispose();
+        
+        if (!string.IsNullOrEmpty(roomId))
+        {
+            await VideoService.LeaveRoomAsync(roomId, CurrentUserId.ToString());
+            await VideoService.DeleteRoomAsync(roomId, CurrentUserId.ToString());
+        }
+        
+        await JSRuntime.InvokeVoidAsync("endVideoCall");
+        await OnCallEnded.InvokeAsync();
+    }
+
+    private async Task ToggleMute()
+    {
+        isMuted = !isMuted;
+        await JSRuntime.InvokeVoidAsync("toggleMute", isMuted);
+    }
+
+    private async Task ToggleVideo()
+    {
+        isVideoEnabled = !isVideoEnabled;
+        await JSRuntime.InvokeVoidAsync("toggleVideo", isVideoEnabled);
+    }
+
+    private void UpdateCallDuration(object? state)
+    {
+        if (isInCall)
+        {
+            var duration = DateTime.Now - callStartTime;
+            callDuration = duration.ToString(@"mm\:ss");
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        durationTimer?.Dispose();
+    }
+}

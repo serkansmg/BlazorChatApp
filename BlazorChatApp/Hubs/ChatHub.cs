@@ -171,6 +171,24 @@ public class ChatHub : Hub
         var senderId = Context.UserIdentifier;
         await Clients.Group($"user-{receiverId}").SendAsync("UserTyping", senderId);
     }
+    
+    // Video call signaling
+    public async Task SendVideoCallSignal(string receiverId, string signalType, string? data = null)
+    {
+        var senderId = Context.UserIdentifier;
+        if (string.IsNullOrEmpty(senderId)) return;
+
+        var signalData = new
+        {
+            Type = signalType,
+            SenderId = senderId,
+            Data = data,
+            Timestamp = DateTime.UtcNow
+        };
+
+        // Alıcıya gönder
+        await Clients.Group($"user-{receiverId}").SendAsync("ReceiveVideoCallSignal", signalData);
+    }
 
     // Arkadaşlık isteği gönder
     public async Task SendFriendRequest(string receiverId, string senderName, string? message = null)

@@ -7,6 +7,8 @@
 @inject EventBus EventBus
 @inject IMessageService MessageService
 @inject GroupService GroupService
+@using BlazorChatApp.Components.Chat.VideoPages
+@using BlazorChatApp.Models.Video
 @using Group = BlazorChatApp.Models.Identity.Group
 @implements IDisposable
 @attribute [Authorize]
@@ -47,7 +49,15 @@
             <!-- Arkadaşlık istekleri -->
             <FriendRequests @ref="friendRequestsRef" OnRequestProcessed="OnRequestProcessed" />
         
-            <UserList Users="@chatUsers" OnUserSelected="HandleUserSelected" />
+            <UserList Users="@chatUsers" 
+                      OnUserSelected="HandleUserSelected" 
+                      OnVideoCallRequested="HandleVideoCallRequest"/>
+            @if (showVideoCall && videoCallUser != null)
+            {
+                <VideoCall TargetUser="videoCallUser" 
+                           CurrentUserId="currentUserId"
+                           OnCallEnded="OnVideoCallEnded" />
+            }
         </RadzenStack>
     </RadzenColumn>   
     <RadzenColumn Size="8">
@@ -69,6 +79,9 @@
     private bool showGroupMemberManager = false;
     private Group? selectedGroupForMembers;
     private FriendRequests? friendRequestsRef;
+    private bool showVideoCall = false;
+    private ChatUser? videoCallUser;
+    private bool isReceivingCall = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -79,6 +92,7 @@
         EventBus.UserStatusChanged += OnUserStatusChanged;
         EventBus.UnreadCountChanged += OnUnreadCountChanged;
         EventBus.FriendRequestReceived += OnFriendRequestReceived;
+        EventBus.VideoCallSignalReceived += OnVideoCallSignalReceived;
         
         // Database'den chat kullanıcılarını yükle
         await ChatState.LoadChatUsersFromDatabaseAsync(currentUserId);
@@ -100,7 +114,73 @@
             }
         }
     }
+    private void OnVideoCallSignalReceived(object data)
+    {
+        InvokeAsync(async () =>
+        {
+            try
+            {
+                var signalJson = System.Text.Json.JsonSerializer.Serialize(data);
+                var signal = System.Text.Json.JsonSerializer.Deserialize<VideoCallSignalData>(signalJson);
+            
+                if (signal != null)
+                {
+                    switch (signal.Type)
+                    {
+                        case "incoming_call":
+                            await HandleIncomingCall(signal);
+                            break;
+                        
+                        case "call_accepted":
+                            await HandleCallAccepted(signal);
+                            break;
+                        
+                        case "call_rejected":
+                            await HandleCallRejected(signal);
+                            break;
+                        
+                        case "call_ended":
+                            await HandleCallEnded(signal);
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Video call signal error: {ex.Message}");
+            }
+        });
+    }
+    private async Task HandleIncomingCall(VideoCallSignalData signal)
+    {
+        // Gelen aramayı göster
+        var caller = chatUsers.FirstOrDefault(u => u.Id.ToString() == signal.SenderId);
+        if (caller != null)
+        {
+            videoCallUser = caller;
+            showVideoCall = true;
+            isReceivingCall = true;
+            StateHasChanged();
+        }
+    }
+    private async Task HandleCallAccepted(VideoCallSignalData signal)
+    {
+        // Call accepted - VideoCall bileşeninde handle edilecek
+        Console.WriteLine("Call accepted");
+    }
 
+    private async Task HandleCallRejected(VideoCallSignalData signal)
+    {
+        // Call rejected
+        OnVideoCallEnded();
+    }
+
+    private async Task HandleCallEnded(VideoCallSignalData signal)
+    {
+        // Call ended
+        OnVideoCallEnded();
+    }
+    
     private void OnFriendRequestReceived(object data)
     {
         InvokeAsync(async () =>
@@ -341,11 +421,31 @@
         selectedGroupForMembers = null;
     }
     
+    private async Task HandleVideoCallRequest(ChatUser user)
+    {
+        videoCallUser = user;
+        showVideoCall = true;
+    
+        // Diğer UI elemanlarını gizle
+        showAddFriend = false;
+        showCreateGroup = false;
+        showGroupMemberManager = false;
+    }
+
+    private void OnVideoCallEnded()
+    {
+        showVideoCall = false;
+        videoCallUser = null;
+    }
+    
+    
+    
     public void Dispose()
     {
         EventBus.MessageReceived -= OnMessageReceived;
         EventBus.UserStatusChanged -= OnUserStatusChanged;
         EventBus.UnreadCountChanged -= OnUnreadCountChanged;
         EventBus.FriendRequestReceived -= OnFriendRequestReceived;
+        EventBus.VideoCallSignalReceived -= OnVideoCallSignalReceived;
     }
 }

@@ -85,6 +85,13 @@ class ChatSignalR {
             }
         });
 
+        this.connection.on("ReceiveVideoCallSignal", (signalData) => {
+            console.log("ReceiveVideoCallSignal event received:", signalData);
+            if (this.dotNetHelper) {
+                this.dotNetHelper.invokeMethodAsync('OnVideoCallSignalReceived', signalData);
+            }
+        });
+
         try {
             await this.connection.start();
             this.isConnected = true;
@@ -125,6 +132,20 @@ class ChatSignalR {
                 console.log("Group media message sent successfully");
             } catch (err) {
                 console.error("Failed to send group media message:", err);
+            }
+        } else {
+            console.error("SignalR not connected!");
+        }
+    }
+
+    async sendVideoCallSignal(receiverId, signalType, data) {
+        console.log("Sending video call signal:", receiverId, signalType);
+        if (this.isConnected) {
+            try {
+                await this.connection.invoke("SendVideoCallSignal", receiverId, signalType, data);
+                console.log("Video call signal sent successfully");
+            } catch (err) {
+                console.error("Failed to send video call signal:", err);
             }
         } else {
             console.error("SignalR not connected!");
@@ -243,8 +264,195 @@ window.sendMediaMessageToUser = async (receiverId, content, messageType, fileUrl
 window.sendMediaMessageToGroup = async (groupId, content, messageType, fileUrl, fileName, fileSize, mimeType) => {
     await window.chatSignalR.sendMediaMessageToGroup(groupId, content, messageType, fileUrl, fileName, fileSize, mimeType);
 };
+
+window.sendVideoCallSignal = async (receiverId, signalType, data) => {
+    await window.chatSignalR.sendVideoCallSignal(receiverId, signalType, data);
+};
+
 window.scrollToBottom = (element) => {
     if (element) {
         element.scrollTop = element.scrollHeight;
+    }
+};
+
+// WebRTC için global değişkenler
+let localStream = null;
+let remoteStream = null;
+let peerConnection = null;
+let isVideoCallActive = false;
+
+// WebRTC configuration
+const rtcConfiguration = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+};
+
+// Video call functions - dosyanın sonuna ekle:
+window.initializeVideoCall = async (connectionParams) => {
+    try {
+        console.log("Initializing video call...");
+
+        // Get user media
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+        });
+
+        // Display local video
+        const localVideo = document.getElementById('local-video');
+        if (localVideo) {
+            localVideo.srcObject = localStream;
+        }
+
+        // Create peer connection
+        peerConnection = new RTCPeerConnection(rtcConfiguration);
+
+        // Add local stream to peer connection
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+
+        // Handle remote stream
+        peerConnection.ontrack = (event) => {
+            console.log("Remote stream received");
+            remoteStream = event.streams[0];
+            const remoteVideo = document.getElementById('remote-video');
+            if (remoteVideo) {
+                remoteVideo.srcObject = remoteStream;
+            }
+        };
+
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.log("ICE candidate generated");
+                // Bu ICE candidate'i SignalR ile karşı tarafa gönder
+                // window.sendVideoCallSignal(receiverId, "ice_candidate", event.candidate);
+            }
+        };
+
+        isVideoCallActive = true;
+        console.log("Video call initialized successfully");
+
+    } catch (error) {
+        console.error("Error initializing video call:", error);
+        throw error;
+    }
+};
+
+window.startVideoCall = async () => {
+    try {
+        if (!peerConnection) {
+            throw new Error("Peer connection not initialized");
+        }
+
+        // Create offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        console.log("Video call started with offer");
+        // Offer'ı SignalR ile karşı tarafa gönder
+        // window.sendVideoCallSignal(receiverId, "offer", offer);
+
+    } catch (error) {
+        console.error("Error starting video call:", error);
+    }
+};
+
+window.endVideoCall = async () => {
+    try {
+        console.log("Ending video call...");
+
+        // Stop local stream
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+
+        // Close peer connection
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+
+        // Clear video elements
+        const localVideo = document.getElementById('local-video');
+        const remoteVideo = document.getElementById('remote-video');
+
+        if (localVideo) localVideo.srcObject = null;
+        if (remoteVideo) remoteVideo.srcObject = null;
+
+        isVideoCallActive = false;
+        console.log("Video call ended");
+
+    } catch (error) {
+        console.error("Error ending video call:", error);
+    }
+};
+
+window.toggleMute = (isMuted) => {
+    if (localStream) {
+        const audioTrack = localStream.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.enabled = !isMuted;
+            console.log("Audio muted:", isMuted);
+        }
+    }
+};
+
+window.toggleVideo = (isVideoEnabled) => {
+    if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.enabled = isVideoEnabled;
+            console.log("Video enabled:", isVideoEnabled);
+        }
+    }
+};
+
+window.toggleScreenShare = async (isScreenSharing) => {
+    try {
+        if (isScreenSharing) {
+            // Start screen sharing
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true
+            });
+
+            // Replace video track in peer connection
+            if (peerConnection) {
+                const videoTrack = screenStream.getVideoTracks()[0];
+                const sender = peerConnection.getSenders().find(s =>
+                    s.track && s.track.kind === 'video'
+                );
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
+            }
+
+            console.log("Screen sharing started");
+        } else {
+            // Stop screen sharing, return to camera
+            const cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            });
+
+            if (peerConnection) {
+                const videoTrack = cameraStream.getVideoTracks()[0];
+                const sender = peerConnection.getSenders().find(s =>
+                    s.track && s.track.kind === 'video'
+                );
+                if (sender) {
+                    await sender.replaceTrack(videoTrack);
+                }
+            }
+
+            console.log("Screen sharing stopped");
+        }
+    } catch (error) {
+        console.error("Error toggling screen share:", error);
     }
 };

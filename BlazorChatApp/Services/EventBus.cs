@@ -9,6 +9,7 @@ public class EventBus
     public event Action<Guid, int>? UnreadCountChanged;
     public event Action<object>? FriendRequestReceived;
     public event Action<object>? FriendRequestAccepted;
+    public event Action<object>? VideoCallSignalReceived;
     
     public void PublishFriendRequestReceived(object data)
     {
@@ -32,5 +33,10 @@ public class EventBus
     public void PublishUnreadCountChange(Guid userId, int count)
     {
         UnreadCountChanged?.Invoke(userId, count);
+    }
+    
+    public void PublishVideoCallSignal(object signalData)
+    {
+        VideoCallSignalReceived?.Invoke(signalData);
     }
 }

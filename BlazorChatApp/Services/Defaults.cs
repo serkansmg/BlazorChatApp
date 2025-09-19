@@ -186,6 +186,11 @@ public static class Defaults
         services.AddScoped<ChatDataSeeder>();
         //bugün Signalr yarın mqtt :))
         services.AddScoped<IMessageService, SignalRService>();
+        //bugün mediasoup yarın başka bir şey :))
+        services.AddScoped<IVideoConferenceService, MediaSoupVideoService>();
+        //mesela janus kullanmak istersen (henüz implement etmedim)
+        //services.AddScoped<IVideoConferenceService, JanusVideoService>();
+        
         services.AddScoped<GroupService>();
         services.AddTransient<FriendService>();
         services.AddSignalR();

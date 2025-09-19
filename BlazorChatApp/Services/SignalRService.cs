@@ -152,6 +152,17 @@ public class SignalRService : IMessageService,IAsyncDisposable
     {
         await _jsRuntime.InvokeVoidAsync("sendMediaMessageToGroup", groupId, content, messageType, fileUrl, fileName, fileSize, mimeType);
     }
+    public async Task SendVideoCallSignalAsync(string receiverId, string signalType, string? data = null)
+    {
+        await _jsRuntime.InvokeVoidAsync("sendVideoCallSignal", receiverId, signalType, data);
+    }
+    
+    [JSInvokable]
+    public void OnVideoCallSignalReceived(object signalData)
+    {
+        Console.WriteLine($"Video call signal received: {signalData}");
+        _eventBus.PublishVideoCallSignal(signalData);
+    }
     
     public async ValueTask DisposeAsync()
     {

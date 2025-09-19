@@ -19,4 +19,6 @@ public interface IMessageService
     // Arkadaşlık işlemleri
     Task SendFriendRequestAsync(string receiverId, string senderName, string? message = null);
     Task AcceptFriendRequestAsync(string senderId, string accepterName);
+    // Video call işlemleri ← YENİ
+    Task SendVideoCallSignalAsync(string receiverId, string signalType, string? data = null);
 }

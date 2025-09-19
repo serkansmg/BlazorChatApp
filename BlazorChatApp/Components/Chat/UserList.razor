@@ -11,7 +11,10 @@
         <RadzenStack Gap="0.5rem" Style="max-height: 600px; overflow-y: auto;">
             @foreach (var user in filteredUsers)
             {
-                <UserItem ChatUser="user" OnUserClick="@((selectedUser) => HandleUserClick(selectedUser))" />
+                <UserItem ChatUser="user" 
+                          OnUserClick="@((selectedUser) => HandleUserClick(selectedUser))" 
+                          OnVideoCallClick="@((user) => OnVideoCallRequested.InvokeAsync(user))"
+                          />
             }
         </RadzenStack>
     </RadzenStack>
@@ -20,6 +23,7 @@
 @code {
     [Parameter] public List<ChatUser> Users { get; set; } = new();
     [Parameter] public EventCallback<ChatUser> OnUserSelected { get; set; }
+    [Parameter] public EventCallback<ChatUser> OnVideoCallRequested { get; set; }
     
     private string searchText = "";
     private List<ChatUser> filteredUsers = new();
