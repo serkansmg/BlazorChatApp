@@ -1,6 +1,6 @@
 @using ChatMessage = BlazorChatApp.Models.Chat.ChatMessageModel
 @rendermode InteractiveServer
-@inject SignalRService SignalRService
+@inject IMessageService MessageService
 @inject IJSRuntime JSRuntime
 
 @if (SelectedUser != null)
@@ -149,7 +149,7 @@ else
                 {
                     if (SelectedUser.UserType == UserType.Group)
                     {
-                        await SignalRService.SendMediaMessageToGroupAsync(
+                        await MessageService.SendMediaMessageToGroupAsync(
                             SelectedUser.Id.ToString(),
                             $"[{response.MessageType}] {response.FileName}",
                             response.MessageType,
@@ -161,7 +161,7 @@ else
                     }
                     else
                     {
-                        await SignalRService.SendMediaMessageToUserAsync(
+                        await MessageService.SendMediaMessageToUserAsync(
                             SelectedUser.Id.ToString(),
                             $"[{response.MessageType}] {response.FileName}",
                             response.MessageType,
@@ -207,11 +207,11 @@ else
         // SignalR ile gönder
         if (SelectedUser.UserType == UserType.Group)
         {
-            await SignalRService.SendMessageToGroupAsync(SelectedUser.Id.ToString(), message.Content);
+            await MessageService.SendMessageToGroupAsync(SelectedUser.Id.ToString(), message.Content);
         }
         else
         {
-            await SignalRService.SendMessageToUserAsync(SelectedUser.Id.ToString(), message.Content);
+            await MessageService.SendMessageToUserAsync(SelectedUser.Id.ToString(), message.Content);
         }
         
         newMessage = "";

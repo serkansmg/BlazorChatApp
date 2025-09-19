@@ -5,7 +5,7 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ChatState ChatState
 @inject EventBus EventBus
-@inject SignalRService SignalRService
+@inject IMessageService MessageService
 @inject GroupService GroupService
 @using Group = BlazorChatApp.Models.Identity.Group
 @implements IDisposable
@@ -91,7 +91,7 @@
         {
             try
             {
-                await SignalRService.InitializeAsync();
+                await MessageService.InitializeAsync();
                 _signalRInitialized = true;
             }
             catch (Exception ex)
@@ -149,7 +149,7 @@
 
         if (selectedUser.UserType == UserType.Group)
         {
-            await SignalRService.JoinGroupAsync(selectedUser.Id.ToString());
+            await MessageService.JoinGroupAsync(selectedUser.Id.ToString());
         }
 
         await LoadMessagesForSelectedUser();

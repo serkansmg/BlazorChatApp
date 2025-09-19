@@ -7,7 +7,7 @@
 @inject FriendService FriendService
 @inject UserManager<AppUser> UserManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject SignalRService SignalRService
+@inject IMessageService MessageService
 
 <RadzenCard>
     <RadzenStack Gap="1rem">
@@ -82,7 +82,7 @@
             
             // Real-time bildirim gönder
             var currentUser = await UserManager.FindByIdAsync(currentUserId.ToString());
-            await SignalRService.AcceptFriendRequestAsync(request.SenderId.ToString(), currentUser?.DisplayName ?? "Unknown");
+            await MessageService.AcceptFriendRequestAsync(request.SenderId.ToString(), currentUser?.DisplayName ?? "Unknown");
             
             await OnRequestProcessed.InvokeAsync();
             await LoadPendingRequests();

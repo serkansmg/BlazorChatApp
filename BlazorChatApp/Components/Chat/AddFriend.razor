@@ -1,4 +1,4 @@
-@inject SignalRService SignalRService
+@inject IMessageService MessageService
 @inject FriendService FriendService
 @inject UserManager<AppUser> UserManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -125,7 +125,7 @@
             var currentUser = await UserManager.FindByIdAsync(currentUserId.ToString());
 
 
-            await SignalRService.SendFriendRequestAsync(foundUser.Id.ToString(), currentUser?.DisplayName ?? "Unknown", friendRequestMessage);
+            await MessageService.SendFriendRequestAsync(foundUser.Id.ToString(), currentUser?.DisplayName ?? "Unknown", friendRequestMessage);
 
             friendshipStatus = FriendshipStatus.RequestSent;
             await OnFriendRequestSent.InvokeAsync();

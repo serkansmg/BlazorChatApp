@@ -1,0 +1,33 @@
+@using BlazorChatApp.Models.Chat
+@using Radzen
+@using Radzen.Blazor
+@inject DialogService DialogService
+
+<div class="image-message">
+    <RadzenImage Path="@Message.FileUrl" 
+                 Style="max-width: 250px; max-height: 200px; border-radius: 8px; cursor: pointer;" 
+                 Click="@(() => ShowImageModal(Message.FileUrl))" />
+    @if (!string.IsNullOrEmpty(Message.FileName))
+    {
+        <RadzenText TextStyle="TextStyle.Caption" Class="mt-1 text-muted">@Message.FileName</RadzenText>
+    }
+</div>
+
+@code {
+    [Parameter] public ChatMessageModel Message { get; set; } = null!;
+    [Parameter] public EventCallback<string> OnImageClick { get; set; }
+
+    private async Task ShowImageModal(string imageUrl)
+    {
+        await DialogService.OpenAsync<ImageModal>("Resim",
+            new Dictionary<string, object>() { { "ImageUrl", imageUrl } },
+            new DialogOptions() 
+            { 
+                Resizable = true, 
+                Draggable = true,
+                Width = "auto", 
+                Height = "auto",
+                CloseDialogOnOverlayClick = true
+            });
+    }
+}

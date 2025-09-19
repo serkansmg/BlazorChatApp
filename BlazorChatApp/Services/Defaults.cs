@@ -184,7 +184,8 @@ public static class Defaults
         services.AddScoped<ChatState>();
         services.AddScoped<ChatService>();
         services.AddScoped<ChatDataSeeder>();
-        services.AddScoped<SignalRService>();
+        //bugün Signalr yarın mqtt :))
+        services.AddScoped<IMessageService, SignalRService>();
         services.AddScoped<GroupService>();
         services.AddTransient<FriendService>();
         services.AddSignalR();

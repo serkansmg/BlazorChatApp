@@ -1,126 +1,33 @@
+@using BlazorChatApp.Components.Chat.MessagePages
 @inject DialogService DialogService
+
 <div class="message-content">
     @switch (Message.MessageType)
     {
         case MessageType.Text:
-            <RadzenText Class="mb-1">@Message.Content</RadzenText>
+            <TextMessage Message="Message" />
             break;
             
         case MessageType.Image:
-            <div class="image-message">
-                <RadzenImage Path="@Message.FileUrl" 
-                             Style="max-width: 250px; max-height: 200px; border-radius: 8px; cursor: pointer;" 
-                             Click="@(() => ShowImageModal(Message.FileUrl))" />
-                @if (!string.IsNullOrEmpty(Message.FileName))
-                {
-                    <RadzenText TextStyle="TextStyle.Caption" Class="mt-1 text-muted">@Message.FileName</RadzenText>
-                }
-            </div>
+            <ImageMessage Message="Message" OnImageClick="OnImageClick" />
             break;
             
         case MessageType.Video:
-            <div class="video-message">
-                <video controls style="max-width: 250px; max-height: 200px; border-radius: 8px;">
-                    <source src="@Message.FileUrl" type="@Message.MimeType" />
-                    Tarayıcınız video oynatmayı desteklemiyor.
-                </video>
-                @if (!string.IsNullOrEmpty(Message.FileName))
-                {
-                    <RadzenText TextStyle="TextStyle.Caption" Class="mt-1 text-muted">@Message.FileName</RadzenText>
-                }
-            </div>
+            <VideoMessage Message="Message" />
             break;
             
         case MessageType.Audio:
-            <div class="audio-message">
-                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                    <RadzenIcon Icon="music_note" />
-                    <RadzenStack Orientation="Orientation.Vertical" Gap="0.25rem" Style="flex: 1;">
-                        <audio controls style="width: 100%; max-width: 200px;">
-                            <source src="@Message.FileUrl" type="@Message.MimeType" />
-                            Tarayıcınız ses oynatmayı desteklemiyor.
-                        </audio>
-                        @if (!string.IsNullOrEmpty(Message.FileName))
-                        {
-                            <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">@Message.FileName</RadzenText>
-                        }
-                    </RadzenStack>
-                </RadzenStack>
-            </div>
+            <AudioMessage Message="Message" />
             break;
             
         case MessageType.File:
-            <div class="file-message">
-                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" 
-                           Style="padding: 0.5rem; border: 1px solid #ddd; border-radius: 8px; cursor: pointer;"
-                           @onclick="@(() => DownloadFile(Message.FileUrl, Message.FileName))">
-                    <RadzenIcon Icon="@GetFileIcon(Message.FileName)" Size="24px" />
-                    <RadzenStack Orientation="Orientation.Vertical" Gap="0.25rem" Style="flex: 1;">
-                        <RadzenText TextStyle="TextStyle.Subtitle2">@Message.FileName</RadzenText>
-                        <RadzenText TextStyle="TextStyle.Caption" Class="text-muted">
-                            @FormatFileSize(Message.FileSize ?? 0)
-                        </RadzenText>
-                    </RadzenStack>
-                    <RadzenIcon Icon="download" Size="20px" />
-                </RadzenStack>
-            </div>
+            <FileMessage Message="Message" OnFileDownload="OnFileDownload" />
             break;
     }
 </div>
-
- 
 
 @code {
     [Parameter] public ChatMessageModel Message { get; set; } = null!;
     [Parameter] public EventCallback<string> OnImageClick { get; set; }
     [Parameter] public EventCallback<(string Url, string FileName)> OnFileDownload { get; set; }
-
-    
-
-    private async Task DownloadFile(string fileUrl, string fileName)
-    {
-        await OnFileDownload.InvokeAsync((fileUrl, fileName));
-    }
-
-    private string GetFileIcon(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLower();
-        return extension switch
-        {
-            ".pdf" => "picture_as_pdf",
-            ".doc" or ".docx" => "description",
-            ".xls" or ".xlsx" => "table_chart",
-            ".ppt" or ".pptx" => "slideshow",
-            ".zip" or ".rar" => "archive",
-            ".txt" => "text_snippet",
-            _ => "insert_drive_file"
-        };
-    }
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len = len / 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
-    
-    private async Task ShowImageModal(string imageUrl)
-    {
-        await DialogService.OpenAsync<ImageModal>("Resim",
-            new Dictionary<string, object>() { { "ImageUrl", imageUrl } },
-            new DialogOptions() 
-            { 
-                Resizable = true, 
-                Draggable = true,
-                Width = "auto", 
-                Height = "auto",
-                CloseDialogOnOverlayClick = true
-            });
-    }
 }

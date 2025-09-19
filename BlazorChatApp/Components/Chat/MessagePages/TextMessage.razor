@@ -1,0 +1,9 @@
+@using BlazorChatApp.Models.Chat
+@using Radzen
+@using Radzen.Blazor
+
+<RadzenText Class="mb-1">@Message.Content</RadzenText>
+
+@code {
+    [Parameter] public ChatMessageModel Message { get; set; } = null!;
+}

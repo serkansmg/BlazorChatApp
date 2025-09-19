@@ -3,7 +3,7 @@ using BlazorChatApp.Models.Chat;
 
 namespace BlazorChatApp.Services;
 
-public class SignalRService : IAsyncDisposable
+public class SignalRService : IMessageService,IAsyncDisposable
 {
     private readonly IJSRuntime _jsRuntime;
     private readonly EventBus _eventBus;
