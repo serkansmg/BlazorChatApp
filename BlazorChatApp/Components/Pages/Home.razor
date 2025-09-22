@@ -10,6 +10,8 @@
 @using BlazorChatApp.Components.Chat.VideoPages
 @using BlazorChatApp.Models.Video
 @using Group = BlazorChatApp.Models.Identity.Group
+@inject VideoCallSignalHandler VideoCallHandler
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 @attribute [Authorize]
 <PageTitle>Ana Sayfa - Chat</PageTitle>
@@ -56,6 +58,9 @@
             {
                 <VideoCall TargetUser="videoCallUser" 
                            CurrentUserId="currentUserId"
+                           RoomId="@incomingCallRoomId"
+                           IsReceivingCall="@isReceivingCall"
+                           CallAccepted="callAccepted"
                            OnCallEnded="OnVideoCallEnded" />
             }
         </RadzenStack>
@@ -82,10 +87,13 @@
     private bool showVideoCall = false;
     private ChatUser? videoCallUser;
     private bool isReceivingCall = false;
-
+    private string? incomingCallRoomId;
+    private bool callAccepted = false;
+    
     protected override async Task OnInitializedAsync()
     {
         await LoadCurrentUser();
+        
         
         // EventBus event'lerini dinle
         EventBus.MessageReceived += OnMessageReceived;
@@ -106,6 +114,7 @@
             try
             {
                 await MessageService.InitializeAsync();
+                await VideoCallHandler.InitializeAsync();
                 _signalRInitialized = true;
             }
             catch (Exception ex)
@@ -114,20 +123,42 @@
             }
         }
     }
+    
+    
     private void OnVideoCallSignalReceived(object data)
     {
         InvokeAsync(async () =>
         {
             try
             {
-                var signalJson = System.Text.Json.JsonSerializer.Serialize(data);
-                var signal = System.Text.Json.JsonSerializer.Deserialize<VideoCallSignalData>(signalJson);
+                Console.WriteLine($"Raw signal data: {data}");
             
-                if (signal != null)
+                // Case-insensitive JSON deserializer options
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+            
+                VideoCallSignalData? signal = null;
+            
+                if (data is JsonElement jsonElement)
+                {
+                    signal = JsonSerializer.Deserialize<VideoCallSignalData>(jsonElement.GetRawText(), options);
+                }
+                else
+                {
+                    var signalJson = JsonSerializer.Serialize(data);
+                    signal = JsonSerializer.Deserialize<VideoCallSignalData>(signalJson, options);
+                }
+            
+                Console.WriteLine($"Deserialized signal - Type: {signal?.Type}, SenderId: {signal?.SenderId}");
+            
+                if (signal != null && !string.IsNullOrEmpty(signal.Type))
                 {
                     switch (signal.Type)
                     {
                         case "incoming_call":
+                            Console.WriteLine("Calling HandleIncomingCall...");
                             await HandleIncomingCall(signal);
                             break;
                         
@@ -151,24 +182,32 @@
             }
         });
     }
+    
     private async Task HandleIncomingCall(VideoCallSignalData signal)
     {
-        // Gelen aramayı göster
+        Console.WriteLine($"Handling incoming call from: {signal.SenderId}");
+    
         var caller = chatUsers.FirstOrDefault(u => u.Id.ToString() == signal.SenderId);
         if (caller != null)
         {
+            Console.WriteLine($"Caller found: {caller.Name}");
             videoCallUser = caller;
             showVideoCall = true;
             isReceivingCall = true;
+            incomingCallRoomId = signal.Data;
+        
             StateHasChanged();
+            Console.WriteLine($"Incoming call UI set - isReceivingCall: {isReceivingCall}, roomId: {incomingCallRoomId}");
         }
     }
+    
     private async Task HandleCallAccepted(VideoCallSignalData signal)
     {
-        // Call accepted - VideoCall bileşeninde handle edilecek
-        Console.WriteLine("Call accepted");
+        Console.WriteLine("Call accepted signal received");
+        callAccepted = true;
+        StateHasChanged();
     }
-
+    
     private async Task HandleCallRejected(VideoCallSignalData signal)
     {
         // Call rejected
@@ -421,23 +460,30 @@
         selectedGroupForMembers = null;
     }
     
+    
+    
+    
     private async Task HandleVideoCallRequest(ChatUser user)
     {
         videoCallUser = user;
         showVideoCall = true;
+        isReceivingCall = false; // ← Outgoing call için false
+        incomingCallRoomId = null; // ← Outgoing call için null
     
-        // Diğer UI elemanlarını gizle
         showAddFriend = false;
         showCreateGroup = false;
         showGroupMemberManager = false;
+    
+        Console.WriteLine($"Starting outgoing call to {user.Name}");
     }
-
     private void OnVideoCallEnded()
     {
         showVideoCall = false;
         videoCallUser = null;
+        callAccepted = false; 
+        isReceivingCall = false; 
+        incomingCallRoomId = null; 
     }
-    
     
     
     public void Dispose()

@@ -1,0 +1,12 @@
+{
+    "general": {
+        "json": "indented",
+        "ws": true,
+        "ws_port": 8188,
+        "ws_interface": "0.0.0.0",
+        "wss": false,
+        "wss_port": 8989,
+        "ws_logging": "err",
+        "ws_acl": []
+    }
+}

@@ -1,11 +1,14 @@
 @using BlazorChatApp.Models.Video
 @using BlazorChatApp.Models.Chat
 @using BlazorChatApp.Services
+@using BlazorChatApp.Shared.Models.VideoModels
 @using Radzen
 @using Radzen.Blazor
 @inject IVideoConferenceService VideoService
 @inject IMessageService MessageService
 @inject IJSRuntime JSRuntime
+@inject EventBus EventBus
+@implements IDisposable
 
 <RadzenCard Class="video-call-container" Style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; background: #1a1a1a;">
     @if (isConnecting)
@@ -43,23 +46,41 @@
                 }
             </div>
             
-            <!-- Call Controls -->
-            <div style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 1rem;">
-                <RadzenButton Icon="@(isMuted ? "mic_off" : "mic")" 
-                             Click="ToggleMute" 
-                             ButtonStyle="@(isMuted ? ButtonStyle.Danger : ButtonStyle.Success)"
-                             Style="width: 60px; height: 60px; border-radius: 50%;" />
-                             
-                <RadzenButton Icon="call_end" 
-                             Click="EndCall" 
-                             ButtonStyle="ButtonStyle.Danger"
-                             Style="width: 60px; height: 60px; border-radius: 50%;" />
-                             
-                <RadzenButton Icon="@(isVideoEnabled ? "videocam" : "videocam_off")" 
-                             Click="ToggleVideo" 
-                             ButtonStyle="@(isVideoEnabled ? ButtonStyle.Success : ButtonStyle.Danger)"
-                             Style="width: 60px; height: 60px; border-radius: 50%;" />
+            <!-- Call Controls - mevcut kontrolların üstüne ekle -->
+            <div style="position: absolute; top: 20px; right: 240px; display: flex; gap: 0.5rem;">
+                <RadzenButton Icon="cameraswitch" Click="ShowMediaSelector" 
+                              ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                              Style="border-radius: 50%; width: 40px; height: 40px;" />
             </div>
+
+            @if (showMediaSelector)
+            {
+                <!-- Media Selector Panel -->
+                <div style="position: absolute; top: 70px; right: 20px; width: 300px; background: rgba(0,0,0,0.9); padding: 1rem; border-radius: 8px;">
+                    <RadzenStack Gap="0.75rem">
+                        <RadzenText Style="color: white;">Medya Kaynağı Seç</RadzenText>
+            
+                        <RadzenFormField Text="Kamera">
+                            <RadzenDropDown @bind-Value="selectedVideoSource" Data="@videoSources" 
+                                            TextProperty="Label" ValueProperty="DeviceId" 
+                                            Style="width: 100%;" Change="OnVideoSourceChanged" />
+                        </RadzenFormField>
+            
+                        <RadzenFormField Text="Mikrofon">
+                            <RadzenDropDown @bind-Value="selectedAudioSource" Data="@audioSources" 
+                                            TextProperty="Label" ValueProperty="DeviceId"
+                                            Style="width: 100%;" Change="OnAudioSourceChanged" />
+                        </RadzenFormField>
+            
+                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                            <RadzenButton Text="Ekran Paylaş" Click="StartScreenShare" 
+                                          ButtonStyle="ButtonStyle.Info" Size="ButtonSize.Small" Style="flex: 1;" />
+                            <RadzenButton Text="Kapat" Click="HideMediaSelector" 
+                                          ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" />
+                        </RadzenStack>
+                    </RadzenStack>
+                </div>
+            }
         </div>
     }
     else if (isReceivingCall)
@@ -83,6 +104,16 @@
     [Parameter] public ChatUser TargetUser { get; set; } = null!;
     [Parameter] public Guid CurrentUserId { get; set; }
     [Parameter] public EventCallback OnCallEnded { get; set; }
+    [Parameter] public bool IsReceivingCall { get; set; } = false;
+    [Parameter] public string? RoomId { get; set; }
+    [Parameter] public bool CallAccepted { get; set; } = false;
+    
+    
+    private bool showMediaSelector = false;
+    private List<MediaDevice> videoSources = new();
+    private List<MediaDevice> audioSources = new();
+    private string selectedVideoSource = "";
+    private string selectedAudioSource = "";
     
     private bool isConnecting = false;
     private bool isInCall = false;
@@ -94,27 +125,75 @@
     private Timer? durationTimer;
     private string? roomId;
 
+    protected override void OnParametersSet()
+    {
+        // Önce CallAccepted kontrolü
+        if (CallAccepted && isConnecting)
+        {
+            InvokeAsync(HandleCallAccepted);
+        }
+    
+        // Sonra IsReceivingCall kontrolü
+        if (IsReceivingCall && !string.IsNullOrEmpty(RoomId))
+        {
+            isReceivingCall = true;
+            roomId = RoomId;
+            Console.WriteLine($"Parameters set - receiving call: {isReceivingCall}, roomId: {roomId}");
+        }
+    }
+    
     protected override async Task OnInitializedAsync()
     {
-        await InitiateCall();
+        
+        EventBus.MediaDevicesLoaded += OnMediaDevicesLoaded;
+        if (IsReceivingCall)
+        {
+            // Incoming call - sadece UI göster, room zaten var
+            isReceivingCall = true;
+            roomId = RoomId;
+            Console.WriteLine($"Receiving call - roomId: {roomId}");
+        }
+        else
+        {
+            // Outgoing call - room oluştur ve signal gönder
+            await InitiateCall();
+            Console.WriteLine("Initiating outgoing call");
+        }
     }
-
+    
+    private void OnMediaDevicesLoaded(List<MediaDevice> videoDevices, List<MediaDevice> audioDevices)
+    {
+        InvokeAsync(() =>
+        {
+            videoSources = videoDevices;
+            audioSources = audioDevices;
+        
+            if (videoSources.Any())
+                selectedVideoSource = videoSources.First().DeviceId;
+            if (audioSources.Any())
+                selectedAudioSource = audioSources.First().DeviceId;
+        
+            Console.WriteLine($"VideoCall: Media devices loaded: {videoDevices.Count} video, {audioDevices.Count} audio");
+            StateHasChanged();
+        });
+    }
+    
     private async Task InitiateCall()
     {
         isConnecting = true;
-        
+    
         try
         {
             // Video room oluştur (2 kişilik)
             var room = await VideoService.CreateRoomAsync($"Call-{CurrentUserId}-{TargetUser.Id}", 2, CurrentUserId.ToString());
             roomId = room.RoomId;
-            
+        
             // Karşı tarafa call signal gönder
             await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "incoming_call", roomId);
-            
-            // WebRTC bağlantısını hazırla
-            await JSRuntime.InvokeVoidAsync("initializeVideoCall", room.ConnectionParams);
-            
+        
+            // Janus WebRTC bağlantısını hazırla
+            await JSRuntime.InvokeVoidAsync("initializeJanusVideoCall", room.ConnectionParams); // ← MediaSoup yerine Janus
+        
             // Timeout için timer başlat (30 saniye)
             _ = Task.Delay(30000).ContinueWith(async _ => 
             {
@@ -130,31 +209,46 @@
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"Call initiation error: {ex.Message}");
             await EndCall();
         }
-    }
-
+    }    
+  
     private async Task AcceptCall()
     {
+        Console.WriteLine("AcceptCall started");
+    
         isReceivingCall = false;
         isInCall = true;
         callStartTime = DateTime.Now;
-        
-        // Join room
-        if (!string.IsNullOrEmpty(roomId))
-        {
-            await VideoService.JoinRoomAsync(roomId, CurrentUserId.ToString(), "User");
-        }
-        
-        // Karşı tarafa kabul signal'i gönder
-        await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "call_accepted", roomId);
-        
-        // Call duration timer başlat
-        durationTimer = new Timer(UpdateCallDuration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-        
-        await JSRuntime.InvokeVoidAsync("startVideoCall");
-    }
 
+        try
+        {
+            if (!string.IsNullOrEmpty(roomId))
+            {
+                var joinInfo = await VideoService.JoinRoomAsync(roomId, CurrentUserId.ToString(), "User");
+                await JSRuntime.InvokeVoidAsync("initializeJanusVideoCall", joinInfo.ConnectionParams);
+            
+                // ← BU ÇOK KRİTİK - TargetUser ID'sini set et
+                await JSRuntime.InvokeVoidAsync("setVideoCallTarget", TargetUser.Id.ToString());
+            }
+
+            durationTimer = new Timer(UpdateCallDuration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        
+            // WebRTC offer/answer başlat
+            await JSRuntime.InvokeVoidAsync("startJanusVideoCall");
+
+            await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "call_accepted", roomId);
+        
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Call accept error: {ex.Message}");
+            await EndCall();
+        }
+    }
+    
     private async Task RejectCall()
     {
         await MessageService.SendVideoCallSignalAsync(TargetUser.Id.ToString(), "call_rejected", roomId);
@@ -166,31 +260,45 @@
         isConnecting = false;
         isInCall = false;
         isReceivingCall = false;
-        
+    
         durationTimer?.Dispose();
-        
+    
         if (!string.IsNullOrEmpty(roomId))
         {
             await VideoService.LeaveRoomAsync(roomId, CurrentUserId.ToString());
             await VideoService.DeleteRoomAsync(roomId, CurrentUserId.ToString());
         }
-        
-        await JSRuntime.InvokeVoidAsync("endVideoCall");
+    
+        await JSRuntime.InvokeVoidAsync("endJanusVideoCall"); // ← MediaSoup yerine Janus cleanup
         await OnCallEnded.InvokeAsync();
     }
-
+    
+    private async Task HandleCallAccepted()
+    {
+        Console.WriteLine("Call was accepted - switching to in-call state");
+    
+        isConnecting = false;
+        isInCall = true;
+        callStartTime = DateTime.Now;
+    
+        // Call timer başlat
+        durationTimer = new Timer(UpdateCallDuration, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    
+        StateHasChanged();
+    }
+    
     private async Task ToggleMute()
     {
         isMuted = !isMuted;
-        await JSRuntime.InvokeVoidAsync("toggleMute", isMuted);
+        await JSRuntime.InvokeVoidAsync("toggleMute", isMuted); // MediaSoup yerine Janus
     }
 
     private async Task ToggleVideo()
     {
         isVideoEnabled = !isVideoEnabled;
-        await JSRuntime.InvokeVoidAsync("toggleVideo", isVideoEnabled);
+        await JSRuntime.InvokeVoidAsync("toggleVideo", isVideoEnabled); // MediaSoup yerine Janus
     }
-
+    
     private void UpdateCallDuration(object? state)
     {
         if (isInCall)
@@ -200,9 +308,42 @@
             InvokeAsync(StateHasChanged);
         }
     }
+    private async Task ShowMediaSelector()
+    {
+        showMediaSelector = true;
+        await LoadMediaDevices();
+    }
+
+    private void HideMediaSelector()
+    {
+        showMediaSelector = false;
+    }
+
+    private async Task LoadMediaDevices()
+    {
+        await JSRuntime.InvokeVoidAsync("loadMediaDevices");
+    }
+
+    private async Task OnVideoSourceChanged()
+    {
+        await JSRuntime.InvokeVoidAsync("switchVideoSource", selectedVideoSource);
+    }
+
+    private async Task OnAudioSourceChanged()
+    {
+        await JSRuntime.InvokeVoidAsync("switchAudioSource", selectedAudioSource);
+    }
+
+    private async Task StartScreenShare()
+    {
+        await JSRuntime.InvokeVoidAsync("startScreenCapture");
+        showMediaSelector = false;
+    }
+
 
     public void Dispose()
     {
+        EventBus.MediaDevicesLoaded -= OnMediaDevicesLoaded;
         durationTimer?.Dispose();
     }
 }

@@ -1,0 +1,19 @@
+{
+    "general": {
+        "json": "indented",
+        "base_path": "/janus",
+        "http": true,
+        "port": 8088,
+        "https": false,
+        "secure_port": 8089,
+        "admin_http": false,
+        "admin_port": 7088,
+        "admin_https": false,
+        "admin_secure_port": 7889
+    },
+    "cors": {
+        "allow_origin": "*",
+        "allow_methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "allow_headers": "Accept, Accept-Language, Content-Language, Content-Type"
+    }
+}

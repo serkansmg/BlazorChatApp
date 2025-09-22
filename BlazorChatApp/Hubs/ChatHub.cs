@@ -188,6 +188,8 @@ public class ChatHub : Hub
 
         // Alıcıya gönder
         await Clients.Group($"user-{receiverId}").SendAsync("ReceiveVideoCallSignal", signalData);
+    
+        Console.WriteLine($"Video signal sent: {signalType} from {senderId} to {receiverId}");
     }
 
     // Arkadaşlık isteği gönder
@@ -233,7 +235,19 @@ public class ChatHub : Hub
             AcceptedAt = DateTime.UtcNow
         });
     }
+// MediaSoup transport connect
+    public async Task ConnectTransport(string transportId, object dtlsParameters)
+    {
+        var senderId = Context.UserIdentifier;
+        await Clients.Group($"user-{senderId}").SendAsync("TransportConnected", new { transportId, dtlsParameters });
+    }
 
+// MediaSoup produce
+    public async Task ProduceMedia(string transportId, string kind, object rtpParameters)
+    {
+        var senderId = Context.UserIdentifier;
+        await Clients.Group($"user-{senderId}").SendAsync("MediaProduced", new { transportId, kind, rtpParameters });
+    }
 // Arkadaşlık isteği reddedildi
     public async Task RejectFriendRequest(string senderId)
     {

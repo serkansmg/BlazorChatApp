@@ -1,4 +1,5 @@
 using BlazorChatApp.Models.Chat;
+using BlazorChatApp.Shared.Models.VideoModels;
 
 namespace BlazorChatApp.Services;
 
@@ -11,6 +12,19 @@ public class EventBus
     public event Action<object>? FriendRequestAccepted;
     public event Action<object>? VideoCallSignalReceived;
     
+    public event Action<string>? VideoCallStateChanged;
+    public event Action<string>? VideoCallError;
+    public event Action<List<MediaDevice>, List<MediaDevice>>? MediaDevicesLoaded;
+    
+    public void PublishVideoCallStateChange(string state)
+    {
+        VideoCallStateChanged?.Invoke(state);
+    }
+
+    public void PublishVideoCallError(string error)
+    {
+        VideoCallError?.Invoke(error);
+    }
     public void PublishFriendRequestReceived(object data)
     {
         FriendRequestReceived?.Invoke(data);
@@ -37,6 +51,14 @@ public class EventBus
     
     public void PublishVideoCallSignal(object signalData)
     {
+        Console.WriteLine($"EventBus.PublishVideoCallSignal called with: {signalData}");
+        Console.WriteLine($"Subscriber count: {VideoCallSignalReceived?.GetInvocationList()?.Length ?? 0}");
         VideoCallSignalReceived?.Invoke(signalData);
+        Console.WriteLine("VideoCallSignalReceived event invoked");
+    }
+    
+    public void PublishMediaDevicesLoaded(List<MediaDevice> videoDevices, List<MediaDevice> audioDevices)
+    {
+        MediaDevicesLoaded?.Invoke(videoDevices, audioDevices);
     }
 }

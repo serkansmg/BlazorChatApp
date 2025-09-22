@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.JSInterop;
 using BlazorChatApp.Models.Chat;
+using BlazorChatApp.Models.Video;
 
 namespace BlazorChatApp.Services;
 
@@ -160,8 +162,40 @@ public class SignalRService : IMessageService,IAsyncDisposable
     [JSInvokable]
     public void OnVideoCallSignalReceived(object signalData)
     {
-        Console.WriteLine($"Video call signal received: {signalData}");
+        Console.WriteLine($"SignalRService.OnVideoCallSignalReceived: {signalData}");
+    
+        // WebRTC signalleri de EventBus'a gönder
         _eventBus.PublishVideoCallSignal(signalData);
+    
+        // Ayrıca JavaScript'e de WebRTC signalleri ilet
+        if (signalData is JsonElement jsonElement)
+        {
+            var jsonText = jsonElement.GetRawText();
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var signal = JsonSerializer.Deserialize<VideoCallSignalData>(jsonText, options);
+        
+            if (signal != null && IsWebRTCSignal(signal.Type))
+            {
+                Console.WriteLine($"Forwarding WebRTC signal: {signal.Type}");
+                // WebRTC signalleri direkt JavaScript'e ilet (InvokeAsync olmadan)
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _jsRuntime.InvokeVoidAsync("handleVideoSignal", signal.Type, signal.Data ?? "");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error calling handleVideoSignal: {ex.Message}");
+                    }
+                });
+            }
+        }
+    }
+
+    private bool IsWebRTCSignal(string signalType)
+    {
+        return signalType == "offer" || signalType == "answer" || signalType == "ice_candidate";
     }
     
     public async ValueTask DisposeAsync()

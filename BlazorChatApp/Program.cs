@@ -16,7 +16,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.addLogging();
-builder.ConfigureSettings();        
+builder.ConfigureSettings();
+builder.Services.Configure<JanusSettings>(builder.Configuration.GetSection("Janus"));
 builder.configureKestrel(); 
 builder.Services
     .AddDb()

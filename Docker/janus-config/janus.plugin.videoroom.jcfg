@@ -1,0 +1,8 @@
+{
+    "general": {
+        "admin_key": "janusoverlord",
+        "lock_rtp_forward": false,
+        "events": true
+    },
+    "rooms": []
+}

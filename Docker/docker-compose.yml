@@ -1,0 +1,15 @@
+services:
+  janus:
+    image: canyan/janus-gateway:latest
+    ports:
+      - "8088:8088"   # HTTP API
+      - "8188:8188"   # WebSocket
+      - "20000-20100:20000-20100/udp"  # RTP ports
+    volumes:
+      - ./janus-config:/opt/janus/etc/janus
+    networks:
+      - chatapp-network
+
+networks:
+  chatapp-network:
+    driver: bridge

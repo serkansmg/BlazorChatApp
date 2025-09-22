@@ -64,6 +64,16 @@ public class MediaSoupVideoService : IVideoConferenceService
 
         var result = await response.Content.ReadFromJsonAsync<MediaSoupJoinResponse>();
 
+        // Send transport oluştur
+        var sendTransportResponse = await _httpClient.PostAsJsonAsync($"{_mediaSoupApiUrl}/api/rooms/{roomId}/transports", 
+            new { userId, direction = "send" });
+        var sendTransport = await sendTransportResponse.Content.ReadFromJsonAsync<MediaSoupTransportResponse>();
+
+        // Recv transport oluştur  
+        var recvTransportResponse = await _httpClient.PostAsJsonAsync($"{_mediaSoupApiUrl}/api/rooms/{roomId}/transports", 
+            new { userId, direction = "recv" });
+        var recvTransport = await recvTransportResponse.Content.ReadFromJsonAsync<MediaSoupTransportResponse>();
+
         return new VideoRoomInfo
         {
             RoomId = roomId,
@@ -72,12 +82,13 @@ public class MediaSoupVideoService : IVideoConferenceService
             ConnectionParams = new Dictionary<string, object>
             {
                 { "routerRtpCapabilities", result.RouterRtpCapabilities },
-                { "transportOptions", result.TransportOptions },
+                { "sendTransport", sendTransport },
+                { "recvTransport", recvTransport },
                 { "peerId", result.PeerId }
             }
         };
     }
-
+    
     public async Task LeaveRoomAsync(string roomId, string userId)
     {
         await _httpClient.PostAsync($"{_mediaSoupApiUrl}/api/rooms/{roomId}/leave", 
@@ -220,8 +231,15 @@ internal class MediaSoupRoomResponse
 internal class MediaSoupJoinResponse
 {
     public object RouterRtpCapabilities { get; set; } = new();
-    public object TransportOptions { get; set; } = new();
     public string PeerId { get; set; } = "";
+}
+
+internal class MediaSoupTransportResponse
+{
+    public string Id { get; set; } = "";
+    public object IceParameters { get; set; } = new();
+    public object[] IceCandidates { get; set; } = Array.Empty<object>();
+    public object DtlsParameters { get; set; } = new();
 }
 
 internal class MediaSoupParticipant

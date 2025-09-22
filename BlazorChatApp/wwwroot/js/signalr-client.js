@@ -87,8 +87,14 @@ class ChatSignalR {
 
         this.connection.on("ReceiveVideoCallSignal", (signalData) => {
             console.log("ReceiveVideoCallSignal event received:", signalData);
+            console.log("SignalData keys:", Object.keys(signalData));
+            console.log("DotNetHelper exists:", !!this.dotNetHelper);
+
             if (this.dotNetHelper) {
-                this.dotNetHelper.invokeMethodAsync('OnVideoCallSignalReceived', signalData);
+                console.log("Calling OnVideoCallSignalReceived...");
+                this.dotNetHelper.invokeMethodAsync('OnVideoCallSignalReceived', signalData)
+                    .then(() => console.log("OnVideoCallSignalReceived completed"))
+                    .catch(err => console.error("OnVideoCallSignalReceived failed:", err));
             }
         });
 

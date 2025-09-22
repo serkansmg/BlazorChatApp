@@ -1,0 +1,24 @@
+{
+    "general": {
+        "json": "indented",
+        "base_path": "/opt/janus/share/janus",
+        "plugins_folder": "/opt/janus/lib/janus/plugins",
+        "transports_folder": "/opt/janus/lib/janus/transports",
+        "debug_level": 4,
+        "debug_timestamps": true,
+        "debug_colors": true,
+        "log_to_stdout": true,
+        "admin_secret": "janusoverlord",
+        "server_name": "MyJanusInstance",
+        "session_timeout": 60,
+        "reclaim_session_timeout": 0
+    },
+    "media": {
+        "rtp_port_range": "20000-20100"
+    },
+    "nat": {
+        "stun_server": "stun.l.google.com",
+        "stun_port": 19302,
+        "ice_lite": false
+    }
+}
