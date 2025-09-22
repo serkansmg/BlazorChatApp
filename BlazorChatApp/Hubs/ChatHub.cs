@@ -51,6 +51,9 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
+    
+    #region text only
+
 
     // Text mesajlar için (mevcut)
     public async Task SendMessageToUser(string receiverId, string message)
@@ -171,7 +174,13 @@ public class ChatHub : Hub
         var senderId = Context.UserIdentifier;
         await Clients.Group($"user-{receiverId}").SendAsync("UserTyping", senderId);
     }
+
+
     
+
+    #endregion
+    
+    #region video only
     // Video call signaling
     public async Task SendVideoCallSignal(string receiverId, string signalType, string? data = null)
     {
@@ -260,4 +269,5 @@ public class ChatHub : Hub
             RejectedAt = DateTime.UtcNow
         });
     }
+    #endregion
 }
