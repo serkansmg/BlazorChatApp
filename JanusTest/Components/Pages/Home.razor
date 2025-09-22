@@ -1,0 +1,121 @@
+﻿@page "/"
+@using BlazorChatApp.Models.Video
+@using BlazorChatApp.Services
+@inject IVideoConferenceService VideoService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+<div class="container">
+    <h1>Video Conference</h1>
+    
+    <!-- Create Room -->
+    <div class="mb-4">
+        <h3>Create New Room</h3>
+        <div class="row">
+            <div class="col-md-4">
+                <InputText @bind-Value="newRoomName" placeholder="Room Name" class="form-control" />
+            </div>
+            <div class="col-md-2">
+                <InputNumber @bind-Value="maxParticipants" class="form-control" />
+            </div>
+            <div class="col-md-6">
+                <button @onclick="CreateRoom" class="btn btn-primary">Create Room</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Join Room -->
+    <div class="mb-4">
+        <h3>Join Existing Room</h3>
+        <div class="row">
+            <div class="col-md-6">
+                <InputText @bind-Value="joinRoomId" placeholder="Room ID" class="form-control" />
+            </div>
+            <div class="col-md-4">
+                <InputText @bind-Value="joinDisplayName" placeholder="Display Name" class="form-control" />
+            </div>
+            <div class="col-md-2">
+                <button @onclick="JoinRoom" class="btn btn-success">Join Room</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Active Rooms -->
+    @if (activeRooms.Any())
+    {
+        <h3>Active Rooms</h3>
+        <div class="row">
+            @foreach (var room in activeRooms)
+            {
+                <div class="col-md-4 mb-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">@room.RoomName</h5>
+                            <p class="card-text">@room.CurrentParticipantCount / @room.MaxParticipants participants</p>
+                            <a href="/videoroom/@room.RoomId?UserId=@currentUserId&InitialDisplayName=@Uri.EscapeDataString("Your Name")" class="btn btn-primary">Join</a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string newRoomName = "";
+    private int maxParticipants = 10;
+    private string joinRoomId = "";
+    private string joinDisplayName = "";
+    private string currentUserId = Guid.NewGuid().ToString();
+    private List<VideoRoomInfo> activeRooms = new();
+
+    
+
+     
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await VideoService.InitializeAsync();
+            await LoadActiveRooms();
+
+        }
+    }
+
+    private async Task CreateRoom()
+    {
+        if (string.IsNullOrEmpty(newRoomName)) return;
+        
+        try
+        {
+            var room = await VideoService.CreateRoomAsync(newRoomName, maxParticipants, currentUserId);
+            await LoadActiveRooms();
+            newRoomName = "";
+        }
+        catch (Exception ex)
+        {
+            // Handle error
+            Console.WriteLine($"Error creating room: {ex.Message}");
+        }
+    }
+
+    private async Task JoinRoom()
+    {
+        if (string.IsNullOrEmpty(joinRoomId) || string.IsNullOrEmpty(joinDisplayName)) return;
+        
+        Navigation.NavigateTo($"/videoroom/{joinRoomId}?UserId={currentUserId}&InitialDisplayName={Uri.EscapeDataString(joinDisplayName)}");
+    }
+
+    private async Task LoadActiveRooms()
+    {
+        try
+        {
+            activeRooms = await VideoService.GetActiveRoomsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading rooms: {ex.Message}");
+        }
+    }
+}

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Janus WS Hızlı Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#0b0f14; color:#e8eef5; padding:16px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    input, button { padding:8px 10px; border-radius:8px; border:1px solid #2a3340; background:#121a22; color:#e8eef5; }
+    input { min-width: 360px; }
+    button { cursor:pointer; }
+    #log { background:#0f1720; border:1px solid #22303f; border-radius:10px; padding:12px; height:380px; overflow:auto; white-space:pre-wrap; }
+    .ok { color:#8ef5a6 } .warn { color:#ffda6b } .err { color:#ff8e8e }
+    small { opacity:.8 }
+  </style>
+</head>
+<body>
+  <h2>Janus WebSocket Bağlantı Testi</h2>
+  <div class="row">
+    <input id="wsurl" placeholder="ws://host:8188" />
+    <button id="btnConnect">1) Connect & Attach (videoroom)</button>
+    <button id="btnList" disabled>2) List Rooms</button>
+    <button id="btnKeepAlive" disabled>KeepAlive</button>
+  </div>
+  <div id="log"></div>
+  <small>İpucu: URL’yi query ile de verebilirsin: <code>?ws=ws://localhost:8188</code></small>
+
+  <script>
+    // ------- basit util -------
+    const $ = sel => document.querySelector(sel);
+    const logBox = $("#log");
+    const log = (msg, cls="") => {
+      const t = new Date().toLocaleTimeString();
+      logBox.innerHTML += `[${t}] ${cls?`<span class="${cls}">`:''}${msg}${cls?`</span>`:''}\n`;
+      logBox.scrollTop = logBox.scrollHeight;
+    };
+
+    // ------- parametre/varsayılan URL -------
+    const params = new URLSearchParams(location.search);
+    const defaultWs = params.get("ws") || "ws://localhost:8188";   // appsettings.json ile aynı varsayılan. 
+    $("#wsurl").value = defaultWs;
+
+    // ------- janus state -------
+    let ws = null;
+    let sessionId = null;
+    let handleId  = null;   // videoroom handle
+    const pending = new Map(); // transaction -> {resolve,reject}
+    const newTx   = () => Math.random().toString(36).slice(2);
+
+    // ------- ws helpers -------
+    const send = (obj) => {
+      const tx = obj.transaction || newTx();
+      obj.transaction = tx;
+      return new Promise((resolve, reject) => {
+        pending.set(tx, { resolve, reject, ts: Date.now() });
+        ws.send(JSON.stringify(obj));
+        // basit timeout
+        setTimeout(() => {
+          if (pending.has(tx)) {
+            pending.delete(tx);
+            reject(new Error("Transaction timeout: " + tx));
+          }
+        }, 8000);
+      });
+    };
+
+    const connect = async () => {
+      const url = $("#wsurl").value.trim();
+      if (!url) return log("Lütfen WS URL girin.", "warn");
+      log("WebSocket bağlanıyor: " + url);
+
+      ws = new WebSocket(url, 'janus-protocol');
+      ws.onopen = async () => {
+        log("WebSocket OPEN", "ok");
+        try {
+          // 1) create session
+          const createRes = await send({ janus: "create" });
+          sessionId = createRes.data.id;
+          log("Session created: " + sessionId, "ok");
+
+          // 2) attach videoroom
+          const attachRes = await send({
+            janus: "attach",
+            session_id: sessionId,
+            plugin: "janus.plugin.videoroom"
+          });
+          handleId = attachRes.data.id;
+          log("Attached to videoroom. Handle: " + handleId, "ok");
+
+          $("#btnList").disabled = false;
+          $("#btnKeepAlive").disabled = false;
+        } catch (e) {
+          log("Hata (create/attach): " + e.message, "err");
+        }
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          // console.debug("RX", data);
+          // transaction eşleşmesi
+          const tx = data.transaction;
+          if (tx && pending.has(tx)) {
+            const { resolve } = pending.get(tx);
+            pending.delete(tx);
+            resolve(data);
+          } else {
+            // event/async mesajlar
+            if (data.janus === "event") {
+              log("Event: " + JSON.stringify(data.plugindata?.data || data), "warn");
+            } else if (data.janus === "webrtcup") {
+              log("WebRTC UP", "ok");
+            } else if (data.janus === "trickle") {
+              log("Trickle candidate (srv)", "warn");
+            } else if (data.janus === "ack") {
+              // sessiz geç
+            } else {
+              log("Mesaj: " + ev.data);
+            }
+          }
+        } catch (err) {
+          log("onmessage parse error: " + err.message, "err");
+        }
+      };
+
+      ws.onerror = (e) => log("WebSocket ERROR", "err");
+      ws.onclose = () => log("WebSocket CLOSED", "warn");
+    };
+
+    const listRooms = async () => {
+      if (!sessionId || !handleId) return log("Önce connect/attach yapın.", "warn");
+      try {
+        const res = await send({
+          janus: "message",
+          session_id: sessionId,
+          handle_id: handleId,
+          body: { request: "list" }
+        });
+        const rooms = res.plugindata?.data?.rooms || [];
+        log("Rooms: " + (rooms.length ? JSON.stringify(rooms, null, 2) : "— (boş)"), rooms.length ? "ok" : "warn");
+      } catch (e) {
+        log("list error: " + e.message, "err");
+      }
+    };
+
+    const keepAlive = async () => {
+      if (!sessionId) return log("Önce session yaratın.", "warn");
+      try {
+        await send({ janus: "keepalive", session_id: sessionId });
+        log("KeepAlive OK", "ok");
+      } catch (e) {
+        log("keepalive error: " + e.message, "err");
+      }
+    };
+
+    // ------- UI events -------
+    $("#btnConnect").addEventListener("click", connect);
+    $("#btnList").addEventListener("click", listRooms);
+    $("#btnKeepAlive").addEventListener("click", keepAlive);
+  </script>
+</body>
+</html>

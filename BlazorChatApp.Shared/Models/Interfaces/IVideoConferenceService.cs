@@ -18,4 +18,5 @@ public interface IVideoConferenceService
     Task KickParticipantAsync(string roomId, string userId, string requestedByUserId);
     Task<bool> IsRoomExistsAsync(string roomId);
     Task<bool> IsUserInRoomAsync(string roomId, string userId);
+    Task InitializeAsync();
 }

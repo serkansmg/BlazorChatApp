@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Janus VideoRoom — Devices Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: dark }
+    body{font:14px/1.45 ui-monospace,Menlo,Consolas,monospace;background:#0b0f14;color:#e8eef5;margin:0;padding:18px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+    input,button,select{padding:8px 10px;border-radius:10px;border:1px solid #2a3340;background:#121a22;color:#e8eef5}
+    input{min-width:200px}
+    select{min-width:260px}
+    button{cursor:pointer}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    video{width:100%;background:#000;border-radius:10px}
+    #remotes{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    #log{margin-top:10px;background:#0f1720;border:1px solid #22303f;border-radius:10px;padding:12px;height:180px;overflow:auto;white-space:pre-wrap}
+    .ok{color:#8ef5a6}.warn{color:#ffda6b}.err{color:#ff8e8e}
+    label small{opacity:.7}
+  </style>
+</head>
+<body>
+  <h2>Janus VideoRoom — Cihaz Seçimi + Ekran Paylaşımı</h2>
+
+  <div class="row">
+    <input id="ws" value="ws://localhost:8188" placeholder="ws://host:8188">
+    <input id="room" value="5555" placeholder="room">
+    <input id="name" value="Serkan" placeholder="display">
+    <input id="adm" value="" placeholder="(ops.) admin_key">
+  </div>
+
+  <div class="row">
+    <button id="connect">Connect</button>
+    <button id="list">List Devices</button>
+    <label><input type="checkbox" id="screen"> Screen Share (video)</label>
+  </div>
+
+  <div class="row">
+    <label>Mic (audioinput): <select id="ain"></select></label>
+    <label>Camera (videoinput): <select id="vin"></select></label>
+    <label>Output (audiooutput) <small>(Chrome)</small>: <select id="aout"></select></label>
+  </div>
+
+  <div class="row">
+    <button id="join" disabled>Join & Publish</button>
+    <button id="leave" disabled>Leave</button>
+    <button id="ka" disabled>KeepAlive</button>
+  </div>
+
+  <div class="grid">
+    <div>
+      <h4>Local</h4>
+      <video id="local" autoplay playsinline muted></video>
+    </div>
+    <div>
+      <h4>Remote Feeds</h4>
+      <div id="remotes"></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <script type="module">
+    import { JanusVideoClient, getMediaDevices } from "./janus-video.js";
+    const $ = s => document.querySelector(s);
+    const log = (m,l)=>{ const t=new Date().toLocaleTimeString(); $("#log").innerHTML += `[${t}] ${l?`<span class="${l}">`:''}${m}${l?`</span>`:''}\n`; $("#log").scrollTop = $("#log").scrollHeight; };
+
+    let client = null;
+
+    // Cihaz listelerini doldur
+    async function fillDeviceDropdowns() {
+      const list = await getMediaDevices();
+      const ain = $("#ain"), vin = $("#vin"), aout = $("#aout");
+      for (const el of [ain, vin, aout]) { el.innerHTML = ""; }
+
+      const addOpt = (sel, id, label) => {
+        const o = document.createElement("option");
+        o.value = id; o.textContent = label || id || "(no label)";
+        sel.appendChild(o);
+      };
+
+      // Varsayılan boş/otomatik seçenek
+      addOpt(ain, "", "(Auto) any audioinput");
+      addOpt(vin, "", "(Auto) 1280x720 camera");
+      addOpt(aout, "", "(Default) system");
+
+      for (const d of list) {
+        if (d.kind === "audioinput")  addOpt(ain, d.deviceId, d.label || `mic ${d.deviceId.slice(0,4)}..`);
+        if (d.kind === "videoinput")  addOpt(vin, d.deviceId, d.label || `cam ${d.deviceId.slice(0,4)}..`);
+        if (d.kind === "audiooutput") addOpt(aout, d.deviceId, d.label || `out ${d.deviceId.slice(0,4)}..`);
+      }
+      log(`devices: ${list.length}`);
+    }
+
+    $("#list").onclick = async ()=>{
+      // İzin uyarısı: cihaz etiketlerinin görünmesi için tarayıcı en az bir kez media izni istemiş olmalı
+      try {
+        // küçük bir probe ile izin al: sadece audio:true veya video:true
+        await navigator.mediaDevices.getUserMedia({ audio:true, video:false }).then(s=>s.getTracks().forEach(t=>t.stop())).catch(()=>{});
+      } catch(_) {}
+      await fillDeviceDropdowns();
+    };
+
+    $("#connect").onclick = async ()=>{
+      client = new JanusVideoClient({
+        wsUrl: $("#ws").value.trim(),
+        roomId: $("#room").value.trim(),
+        display: $("#name").value.trim(),
+        onLog: log,
+        onLocalStream: (stream)=> { $("#local").srcObject = stream; },
+        onRemoteStream: (feedId, stream)=>{
+          let v = document.getElementById("remote-"+feedId);
+          if(!v){
+            v = document.createElement("video");
+            v.id = "remote-"+feedId; v.autoplay = true; v.playsInline = true;
+            v.style.width = "320px"; v.style.borderRadius = "10px";
+            $("#remotes").appendChild(v);
+          }
+          v.srcObject = stream;
+          // (opsiyonel) output sink'i remote videoya uygula
+          client.applyAudioSink(v);
+        },
+        onRemoteLeft: (feedId)=> document.getElementById("remote-"+feedId)?.remove()
+      });
+
+      try{
+        await client.connect();
+        $("#join").disabled = false;
+        $("#leave").disabled = false;
+        $("#ka").disabled = false;
+        log("connected","ok");
+      }catch(e){ log("connect error: "+e.message,"err"); }
+    };
+
+    $("#join").onclick = async ()=>{
+      // Seçimleri sınıfa aktar
+      client.setSelections({
+        audioInputId: $("#ain").value || null,
+        videoInputId: $("#vin").value || null,
+        audioOutputId: $("#aout").value || null,
+        screenShare: $("#screen").checked
+      });
+      try {
+        await client.joinAndPublish($("#local"));
+      } catch (e) {
+        log("join/publish error: "+e.message, "err");
+      }
+    };
+
+    $("#leave").onclick = async ()=>{ try{ await client.leave(); }catch{} };
+    $("#ka").onclick = async ()=>{ try{ await client.keepAlive(); }catch(e){ log("keepalive error: "+e.message,"err"); } };
+  </script>
+</body>
+</html>

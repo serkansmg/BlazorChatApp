@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Janus WS Check</title>
+<style>
+  body{font:14px/1.4 ui-monospace,Menlo,Consolas,monospace;background:#0b0f14;color:#e8eef5;padding:16px}
+  input,button{padding:8px 10px;border-radius:8px;border:1px solid #2a3340;background:#121a22;color:#e8eef5}
+  #log{margin-top:10px;background:#0f1720;border:1px solid #22303f;border-radius:10px;padding:12px;height:360px;overflow:auto;white-space:pre-wrap}
+  .ok{color:#8ef5a6}.warn{color:#ffda6b}.err{color:#ff8e8e}
+</style>
+<h3>Janus WebSocket Bağlantı Testi</h3>
+<div>
+  WS URL: <input id="ws" value="ws://localhost:8188/">
+  <button id="btnTry">Bağlan (auto)</button>
+  <button id="btnNoProto">Subprotocol’süz</button>
+  <button id="btnWithProto">Subprotocol: janus-protocol</button>
+</div>
+<div id="log"></div>
+<script>
+const $=s=>document.querySelector(s); const log=$d=>{$('#log').innerHTML+= $d+'\n'; $('#log').scrollTop = $('#log').scrollHeight;}
+
+async function connect(mode){
+  const url = $('#ws').value.trim();
+  let ws;
+  try{
+    log(`[i] Bağlanılıyor: ${url} mode=${mode}`);
+    ws = (mode==='proto')
+      ? new WebSocket(url, 'janus-protocol')
+      : new WebSocket(url);
+  }catch(e){
+    log(`[!] new WebSocket exception: ${e.message}`); return;
+  }
+  ws.onopen=()=>log(`[✓] WS OPEN (${mode})`); 
+  ws.onclose=e=>log(`[!] WS CLOSED code=${e.code} reason="${e.reason}" wasClean=${e.wasClean}`);
+  ws.onerror=e=>log(`[x] WS ERROR ${e?.message||''}`);
+  ws.onmessage=ev=>{
+    log(`[⇦] ${ev.data}`);
+  };
+  // küçük "create" denemesi — açıksa cevap gelecek
+  setTimeout(()=>{ try{
+    const tx = Math.random().toString(36).slice(2);
+    ws.send(JSON.stringify({janus:"create", transaction:tx}));
+    log(`[⇨] create sent tx=${tx}`);
+  }catch(_){/*ignore*/} }, 300);
+}
+
+$('#btnTry').onclick=async ()=>{
+  // önce subprotocol’lü dene; başarısızsa subprotocol’süz
+  await connect('proto');
+  setTimeout(()=>connect('plain'),1200);
+};
+$('#btnNoProto').onclick=()=>connect('plain');
+$('#btnWithProto').onclick=()=>connect('proto');
+</script>
