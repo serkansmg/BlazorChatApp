@@ -4,10 +4,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorChatApp", "BlazorChat
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorChatApp.Shared", "BlazorChatApp.Shared\BlazorChatApp.Shared.csproj", "{F7AF899A-2565-43DB-98E8-A846C22FAA1C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlazorChatApp.VideoComponents", "BlazorChatApp.VideoComponents\BlazorChatApp.VideoComponents.csproj", "{B7328067-552B-4799-9013-358448E3FA79}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JanusTest", "JanusTest\JanusTest.csproj", "{B58B807D-BBE8-4B36-80A1-67779337075F}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,13 +18,5 @@ Global
 		{F7AF899A-2565-43DB-98E8-A846C22FAA1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F7AF899A-2565-43DB-98E8-A846C22FAA1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F7AF899A-2565-43DB-98E8-A846C22FAA1C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B7328067-552B-4799-9013-358448E3FA79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B7328067-552B-4799-9013-358448E3FA79}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B7328067-552B-4799-9013-358448E3FA79}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B7328067-552B-4799-9013-358448E3FA79}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B58B807D-BBE8-4B36-80A1-67779337075F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B58B807D-BBE8-4B36-80A1-67779337075F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B58B807D-BBE8-4B36-80A1-67779337075F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B58B807D-BBE8-4B36-80A1-67779337075F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

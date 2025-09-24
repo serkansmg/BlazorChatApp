@@ -126,6 +126,7 @@
 
       try{
         await client.connect();
+        await client.createRoom($("#room").value.trim());
         $("#join").disabled = false;
         $("#leave").disabled = false;
         $("#ka").disabled = false;

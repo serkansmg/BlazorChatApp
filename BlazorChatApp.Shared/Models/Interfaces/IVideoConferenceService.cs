@@ -1,10 +1,20 @@
 
 using BlazorChatApp.Models.Video;
+using BlazorChatApp.Shared.Models.VideoModels;
 
 namespace BlazorChatApp.Services;
 
 public interface IVideoConferenceService
 {
+    public event Func<string, VideoSignalData, Task>? VideoSignalReceived;
+    
+    public event Func<VideoRoomInfo, Task>? RoomCreated;
+    public event Func<string, VideoParticipant, Task>? ParticipantJoined;
+    public event Func<string, VideoParticipant, Task>? ParticipantLeft;
+    public event Func<string, string, bool, bool, Task>? MediaStateChanged;
+    public event Func<string, string, Task>? RoomError;
+    public event Func<string, Task>? ConnectionError;
+
     Task<VideoRoomInfo> CreateRoomAsync(string roomName, int maxParticipants, string createdByUserId);
     Task<VideoRoomInfo> JoinRoomAsync(string roomId, string userId, string displayName);
     Task LeaveRoomAsync(string roomId, string userId);
@@ -18,5 +28,11 @@ public interface IVideoConferenceService
     Task KickParticipantAsync(string roomId, string userId, string requestedByUserId);
     Task<bool> IsRoomExistsAsync(string roomId);
     Task<bool> IsUserInRoomAsync(string roomId, string userId);
+    Task<List<MediaDevice>> GetMediaDevicesAsync();
+    Task SetMediaDeviceConstraintsAsync(string userId, MediaDeviceConstraints constraints);
+    string? GetClientId(string userId);
+
+    Task SetDeviceConstraintsAndJoin(string userId, MediaDeviceConstraints? constraints = null,
+        bool screenShare = false, string? videoElementId = null);
     Task InitializeAsync();
 }

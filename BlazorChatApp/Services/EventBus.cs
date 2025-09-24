@@ -12,6 +12,7 @@ public class EventBus
     public event Action<object>? FriendRequestAccepted;
     public event Action<object>? VideoCallSignalReceived;
     
+    
     public event Action<string>? VideoCallStateChanged;
     public event Action<string>? VideoCallError;
     public event Action<List<MediaDevice>, List<MediaDevice>>? MediaDevicesLoaded;
@@ -19,6 +20,7 @@ public class EventBus
     public void PublishVideoCallStateChange(string state)
     {
         VideoCallStateChanged?.Invoke(state);
+        
     }
 
     public void PublishVideoCallError(string error)

@@ -1,0 +1,689 @@
+@page "/"
+@using BlazorChatApp.Services
+@using BlazorChatApp.Shared.Models.VideoModels
+@using BlazorChatApp.Models.Video
+@using Radzen
+@using Radzen.Blazor
+@inject JanusVideoService JanusService
+@inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
+@implements IAsyncDisposable
+@rendermode  InteractiveServer
+<PageTitle>Video Conference Test</PageTitle>
+
+<RadzenCard class="rz-m-2">
+    <RadzenText TextStyle="TextStyle.H4" TagName="TagName.H1" class="rz-color-primary">
+        Janus Video Conference - Test Page
+    </RadzenText>
+    
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-color-secondary rz-mb-4">
+        Test video conferencing functionality with device selection and screen sharing
+    </RadzenText>
+</RadzenCard>
+
+<!-- Connection Settings -->
+<RadzenCard class="rz-m-2">
+    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H3" class="rz-mb-3">
+        Connection Settings
+    </RadzenText>
+    
+    <RadzenRow Gap="1rem">
+        <RadzenColumn Size="12" SizeMD="4">
+            <RadzenLabel Text="WebSocket URL" />
+            <RadzenTextBox @bind-Value="wsUrl" Placeholder="ws://localhost:8188" class="w-100" Disabled="@JanusService.IsConnected" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenLabel Text="Room ID" />
+            <RadzenTextBox @bind-Value="roomId" Placeholder="5555" class="w-100" Disabled="@JanusService.IsConnected" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenLabel Text="Display Name" />
+            <RadzenTextBox @bind-Value="displayName" Placeholder="Your Name" class="w-100" Disabled="@JanusService.IsConnected" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenLabel Text="Admin Key (Optional)" />
+            <RadzenTextBox @bind-Value="adminKey" Placeholder="admin key" class="w-100" Disabled="@JanusService.IsConnected" />
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenCard>
+
+<!-- Device Selection -->
+<RadzenCard class="rz-m-2">
+    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H3" class="rz-mb-3">
+        Device Selection
+    </RadzenText>
+    
+    <RadzenRow Gap="1rem" AlignItems="AlignItems.End">
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenLabel Text="Audio Input (Microphone)" />
+            <RadzenDropDown @bind-Value="selectedAudioInputId" Data="audioInputDevices" 
+                           TextProperty="Label" ValueProperty="DeviceId" 
+                           Placeholder="Select microphone..." class="w-100"
+                           Change="@OnAudioInputChanged" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenLabel Text="Video Input (Camera)" />
+            <RadzenDropDown @bind-Value="selectedVideoInputId" Data="videoInputDevices" 
+                           TextProperty="Label" ValueProperty="DeviceId" 
+                           Placeholder="Select camera..." class="w-100"
+                           Change="@OnVideoInputChanged" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenLabel Text="Audio Output (Speakers)" />
+            <RadzenDropDown @bind-Value="selectedAudioOutputId" Data="audioOutputDevices" 
+                           TextProperty="Label" ValueProperty="DeviceId" 
+                           Placeholder="Select speakers..." class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="3">
+            <RadzenButton Text="Refresh Devices" Icon="refresh" ButtonStyle="ButtonStyle.Secondary" 
+                         Click="@RefreshDevices" Disabled="@isLoading" class="w-100" />
+        </RadzenColumn>
+    </RadzenRow>
+    
+    <RadzenRow class="rz-mt-3">
+        <RadzenColumn Size="12" SizeMD="6">
+            <RadzenCheckBox @bind-Value="useScreenShare" Name="screenShare" />
+            <RadzenLabel Text="Use Screen Share (instead of camera)" Component="screenShare" class="rz-ms-2" />
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenCard>
+
+<!-- Control Buttons -->
+<RadzenCard class="rz-m-2">
+    <RadzenRow Gap="1rem">
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="Connect" Icon="wifi" ButtonStyle="ButtonStyle.Primary" 
+                         Click="@ConnectToJanus" Disabled="@(isLoading || JanusService.IsConnected)" class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="Join & Publish" Icon="videocam" ButtonStyle="ButtonStyle.Success" 
+                         Click="@JoinAndPublish" Disabled="@(isLoading || !JanusService.IsConnected || JanusService.IsInRoom)" class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="Leave Room" Icon="exit_to_app" ButtonStyle="ButtonStyle.Warning" 
+                         Click="@LeaveRoom" Disabled="@(isLoading || !JanusService.IsInRoom)" class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="@(JanusService.IsScreenSharing ? "Stop Screen" : "Screen Share")" 
+                         Icon="@(JanusService.IsScreenSharing ? "stop_screen_share" : "screen_share")" 
+                         ButtonStyle="@(JanusService.IsScreenSharing ? ButtonStyle.Danger : ButtonStyle.Info)" 
+                         Click="@ToggleScreenShare" Disabled="@(isLoading || !JanusService.IsInRoom)" class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="Disconnect" Icon="wifi_off" ButtonStyle="ButtonStyle.Danger" 
+                         Click="@Disconnect" Disabled="@(isLoading || !JanusService.IsConnected)" class="w-100" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="2">
+            <RadzenButton Text="Keep Alive" Icon="favorite" ButtonStyle="ButtonStyle.Light" 
+                         Click="@SendKeepAlive" Disabled="@(isLoading || !JanusService.IsConnected)" class="w-100" />
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenCard>
+
+<!-- Video Containers -->
+<RadzenCard class="rz-m-2">
+    <RadzenRow Gap="2rem">
+        <!-- Local Video -->
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H4" class="rz-mb-2">
+                Local Video (@(JanusService.IsScreenSharing ? "Screen Share" : "Camera"))
+            </RadzenText>
+            <div class="video-container">
+                <video id="localVideo" autoplay playsinline muted 
+                       style="width: 100%; height: 300px; background: #000; border-radius: 8px;"></video>
+                <div class="video-overlay" style="display: @(JanusService.IsInRoom ? "none" : "flex")">
+                    <RadzenIcon Icon="videocam_off" Style="font-size: 3rem; color: #666;" />
+                </div>
+            </div>
+        </RadzenColumn>
+        
+        <!-- Remote Videos -->
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H4" class="rz-mb-2">
+                Remote Participants (@remoteParticipants.Count)
+            </RadzenText>
+            <div class="remote-videos-container" style="min-height: 300px;">
+                @if (!remoteParticipants.Any())
+                {
+                    <div class="no-participants">
+                        <RadzenIcon Icon="group_off" Style="font-size: 3rem; color: #666; margin-bottom: 1rem;" />
+                        <RadzenText TextStyle="TextStyle.Body1" class="rz-color-secondary">
+                            No remote participants
+                        </RadzenText>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var participant in remoteParticipants)
+                    {
+                        <div class="remote-video-item" style="margin-bottom: 1rem;">
+                            <video id="remote-@participant.UserId" autoplay playsinline 
+                                   style="width: 100%; height: 200px; background: #000; border-radius: 8px;"></video>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-mt-1">
+                                @participant.DisplayName
+                            </RadzenText>
+                        </div>
+                    }
+                }
+            </div>
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenCard>
+
+<!-- Connection Status -->
+<RadzenCard class="rz-m-2">
+    <RadzenRow Gap="2rem">
+        <RadzenColumn Size="12" SizeMD="6">
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H4" class="rz-mb-2">Status</RadzenText>
+            <RadzenBadge BadgeStyle="@(JanusService.IsConnected ? BadgeStyle.Success : BadgeStyle.Secondary)" 
+                        Text="@(JanusService.IsConnected ? "Connected" : "Disconnected")" class="rz-me-2" />
+            <RadzenBadge BadgeStyle="@(JanusService.IsInRoom ? BadgeStyle.Success : BadgeStyle.Secondary)" 
+                        Text="@(JanusService.IsInRoom ? "In Room" : "Not in Room")" class="rz-me-2" />
+            <RadzenBadge BadgeStyle="@(JanusService.IsScreenSharing ? BadgeStyle.Info : BadgeStyle.Light)" 
+                        Text="@(JanusService.IsScreenSharing ? "Screen Sharing" : "Camera Mode")" />
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeMD="6">
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H4" class="rz-mb-2">Room Info</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2">
+                Room: <strong>@(JanusService.CurrentRoomId ?? "Not connected")</strong><br />
+                Display: <strong>@(JanusService.CurrentDisplayName ?? "Not set")</strong>
+            </RadzenText>
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenCard>
+
+<!-- Log Panel -->
+<RadzenCard class="rz-m-2">
+    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.H4" class="rz-mb-2">
+        Event Log
+        <RadzenButton Icon="clear" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" 
+                     Click="@ClearLog" class="rz-ms-2" />
+    </RadzenText>
+    <div id="logContainer" style="height: 200px; overflow-y: auto; background: #f8f9fa; padding: 1rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;">
+        @foreach (var logEntry in logEntries)
+        {
+            <div class="log-entry rz-color-@GetLogColor(logEntry.Level)">
+                <span class="log-time">[@logEntry.Timestamp.ToString("HH:mm:ss")]</span>
+                <span class="log-message">@logEntry.Message</span>
+            </div>
+        }
+    </div>
+</RadzenCard>
+
+@code {
+    // Connection parameters
+    private string wsUrl = "ws://localhost:8188";
+    private string roomId = "5555";
+    private string displayName = "Test User";
+    private string adminKey = "";
+
+    // Device selections
+    private string? selectedAudioInputId = null;
+    private string? selectedVideoInputId = null;
+    private string? selectedAudioOutputId = null;
+    private bool useScreenShare = false;
+
+    // Device lists
+    private List<MediaDevice> audioInputDevices = new();
+    private List<MediaDevice> videoInputDevices = new();
+    private List<MediaDevice> audioOutputDevices = new();
+
+    // State
+    private bool isLoading = false;
+    private List<VideoParticipant> remoteParticipants = new();
+    private List<LogEntry> logEntries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Subscribe to service events
+            JanusService.OnLogMessage += HandleLogMessage;
+            JanusService.OnLocalStreamReady += HandleLocalStreamReady;
+            JanusService.OnRemoteStreamAdded += HandleRemoteStreamAdded;
+            JanusService.OnRemoteStreamRemoved += HandleRemoteStreamRemoved;
+            JanusService.OnConnectionStateChanged += HandleConnectionStateChanged;
+            JanusService.OnDeviceChanged += HandleDeviceChanged;
+            JanusService.OnScreenShareStarted += HandleScreenShareStarted;
+            JanusService.OnScreenShareStopped += HandleScreenShareStopped;
+
+            
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Initialization failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", "Failed to initialize video service");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (   firstRender )
+        {
+            // Initialize service
+            await JanusService.InitializeAsync();
+            AddLog("Janus Video Service initialized", "info");
+
+            // Load devices
+            await RefreshDevices();
+            
+        }
+    }
+
+    private async Task RefreshDevices()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var allDevices = await JanusService.GetMediaDevicesAsync();
+            
+            audioInputDevices = allDevices.Where(d => d.Kind == "audioinput").ToList();
+            videoInputDevices = allDevices.Where(d => d.Kind == "videoinput").ToList();
+            audioOutputDevices = allDevices.Where(d => d.Kind == "audiooutput").ToList();
+
+            // Add default options
+            audioInputDevices.Insert(0, new MediaDevice { DeviceId = "", Label = "(Auto) Default Microphone", Kind = "audioinput" });
+            videoInputDevices.Insert(0, new MediaDevice { DeviceId = "", Label = "(Auto) Default Camera", Kind = "videoinput" });
+            audioOutputDevices.Insert(0, new MediaDevice { DeviceId = "", Label = "(Default) System Speakers", Kind = "audiooutput" });
+
+            AddLog($"Found {allDevices.Count} devices", "info");
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Devices refreshed");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Failed to refresh devices: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", "Failed to refresh devices");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ConnectToJanus()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            await JanusService.ConnectAsync(roomId, displayName);
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Connected to Janus server");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Connection failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Connection Failed", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task JoinAndPublish()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var constraints = new MediaDeviceConstraints();
+            
+            if (!string.IsNullOrEmpty(selectedAudioInputId))
+            {
+                constraints.Audio = new AudioConstraints { DeviceId = selectedAudioInputId };
+            }
+            
+            if (!string.IsNullOrEmpty(selectedVideoInputId))
+            {
+                constraints.Video = new VideoConstraints { DeviceId = selectedVideoInputId };
+            }
+
+            await JanusService.JoinAndPublishAsync(constraints);
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Joined room and started publishing");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Join and publish failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Join Failed", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LeaveRoom()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            await JanusService.LeaveRoomAsync();
+            remoteParticipants.Clear();
+            NotificationService.Notify(NotificationSeverity.Info, "Info", "Left the room");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Leave room failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleScreenShare()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            if (JanusService.IsScreenSharing)
+            {
+                await JanusService.StopScreenShareAsync();
+                NotificationService.Notify(NotificationSeverity.Info, "Info", "Screen sharing stopped");
+            }
+            else
+            {
+                await JanusService.StartScreenShareAsync();
+                NotificationService.Notify(NotificationSeverity.Info, "Info", "Screen sharing started");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Screen share toggle failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Disconnect()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            await JanusService.DisconnectAsync();
+            remoteParticipants.Clear();
+            NotificationService.Notify(NotificationSeverity.Info, "Info", "Disconnected from server");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Disconnect failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendKeepAlive()
+    {
+        try
+        {
+            // KeepAlive is automatically handled by the service, but we can trigger a manual one for testing
+            AddLog("Manual keep-alive triggered (service handles this automatically)", "info");
+            NotificationService.Notify(NotificationSeverity.Info, "Info", "Keep-alive sent");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Keep-alive failed: {ex.Message}", "error");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+
+    private async Task OnAudioInputChanged()
+    {
+        if (JanusService.IsInRoom && !string.IsNullOrEmpty(selectedAudioInputId))
+        {
+            try
+            {
+                await JanusService.SwitchMicrophoneAsync(selectedAudioInputId);
+                NotificationService.Notify(NotificationSeverity.Success, "Success", "Microphone switched");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Microphone switch failed: {ex.Message}", "error");
+                NotificationService.Notify(NotificationSeverity.Error, "Error", "Failed to switch microphone");
+            }
+        }
+    }
+
+    private async Task OnVideoInputChanged()
+    {
+        if (JanusService.IsInRoom && !string.IsNullOrEmpty(selectedVideoInputId) && !JanusService.IsScreenSharing)
+        {
+            try
+            {
+                await JanusService.SwitchCameraAsync(selectedVideoInputId);
+                NotificationService.Notify(NotificationSeverity.Success, "Success", "Camera switched");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Camera switch failed: {ex.Message}", "error");
+                NotificationService.Notify(NotificationSeverity.Error, "Error", "Failed to switch camera");
+            }
+        }
+    }
+
+    // Event handlers
+    private async Task HandleLogMessage(string message, string level)
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog(message, level);
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleLocalStreamReady()
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog("Local stream ready", "ok");
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleRemoteStreamAdded(VideoParticipant participant)
+    {
+        await InvokeAsync(() =>
+        {
+            remoteParticipants.Add(participant);
+            AddLog($"Remote participant joined: {participant.DisplayName}", "ok");
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleRemoteStreamRemoved(int feedId)
+    {
+        await InvokeAsync(() =>
+        {
+            // SADECE BİR KERE REMOVE ET
+            var participantToRemove = remoteParticipants.FirstOrDefault(p => p.UserId == feedId.ToString());
+            if (participantToRemove != null)
+            {
+                remoteParticipants.Remove(participantToRemove);
+                AddLog($"Remote participant left: {participantToRemove.DisplayName}", "warn");
+            }
+            else
+            {
+                AddLog($"Participant {feedId} not found in list", "warn");
+            }
+        
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleConnectionStateChanged(string state)
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog($"Connection state: {state}", "info");
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleDeviceChanged(string deviceType)
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog($"Device changed: {deviceType}", "info");
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleScreenShareStarted()
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog("Screen sharing started", "ok");
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleScreenShareStopped()
+    {
+        await InvokeAsync(() =>
+        {
+            AddLog("Screen sharing stopped", "warn");
+            StateHasChanged();
+        });
+    }
+
+    // Helper methods
+    private void AddLog(string message, string level)
+    {
+        var logEntry = new LogEntry
+        {
+            Timestamp = DateTime.Now,
+            Message = message,
+            Level = level
+        };
+        
+        logEntries.Add(logEntry);
+        
+        // Keep only last 100 entries
+        if (logEntries.Count > 100)
+        {
+            logEntries.RemoveAt(0);
+        }
+    }
+
+    private void ClearLog()
+    {
+        logEntries.Clear();
+        StateHasChanged();
+    }
+
+    private string GetLogColor(string level)
+    {
+        return level.ToLower() switch
+        {
+            "error" or "err" => "danger",
+            "warn" or "warning" => "warning",
+            "ok" or "success" => "success",
+            "info" => "info",
+            _ => "secondary"
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Unsubscribe from events
+        JanusService.OnLogMessage -= HandleLogMessage;
+        JanusService.OnLocalStreamReady -= HandleLocalStreamReady;
+        JanusService.OnRemoteStreamAdded -= HandleRemoteStreamAdded;
+        JanusService.OnRemoteStreamRemoved -= HandleRemoteStreamRemoved;
+        JanusService.OnConnectionStateChanged -= HandleConnectionStateChanged;
+        JanusService.OnDeviceChanged -= HandleDeviceChanged;
+        JanusService.OnScreenShareStarted -= HandleScreenShareStarted;
+        JanusService.OnScreenShareStopped -= HandleScreenShareStopped;
+
+        // Service will be disposed by DI container
+    }
+
+    // Helper classes
+    private class LogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; } = "";
+        public string Level { get; set; } = "";
+    }
+}
+
+<style>
+    .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .video-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.8);
+        color: #666;
+    }
+
+    .remote-videos-container {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+
+    .no-participants {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        min-height: 200px;
+    }
+
+    .remote-video-item {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 0.5rem;
+        background: #fff;
+    }
+
+    .log-entry {
+        margin-bottom: 0.25rem;
+        line-height: 1.4;
+    }
+
+    .log-time {
+        color: #666;
+        margin-right: 0.5rem;
+    }
+
+    .log-message {
+        word-break: break-word;
+    }
+</style>

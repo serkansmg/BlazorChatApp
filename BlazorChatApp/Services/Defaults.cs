@@ -189,7 +189,8 @@ public static class Defaults
         //bugün mediasoup yarın başka bir şey :))
         //services.AddScoped<IVideoConferenceService, MediaSoupVideoService>();
         //mesela janus kullanmak istersen (henüz implement etmedim)
-        services.AddScoped<IVideoConferenceService, JanusVideoService>();
+        //services.AddScoped<IVideoConferenceService, JanusVideoConferenceService>();
+        services.AddScoped<JanusVideoService>();
         services.AddScoped<VideoCallSignalHandler>();
         
         services.AddScoped<GroupService>();

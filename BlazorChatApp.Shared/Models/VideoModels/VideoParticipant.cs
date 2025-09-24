@@ -8,6 +8,7 @@ public class VideoParticipant
     public DateTime JoinedAt { get; set; }
     public bool IsMuted { get; set; }
     public bool IsVideoEnabled { get; set; }
+    public bool IsAudioEnabled { get; set; }
     public bool IsScreenSharing { get; set; }
     public VideoParticipantRole Role { get; set; }
     public Dictionary<string, object> MediaSettings { get; set; } = new();

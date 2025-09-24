@@ -32,4 +32,5 @@
 <ItemGroup>
   <ProjectReference Include="..\BlazorChatApp.Shared\BlazorChatApp.Shared.csproj" />
 </ItemGroup>
+
 </Project>
